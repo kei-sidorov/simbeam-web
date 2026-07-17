@@ -1,0 +1,14 @@
+#!/bin/sh
+# Pre-commit: lint + typecheck + tests. Fast by design — no network, no build.
+set -e
+
+echo "pre-commit: biome check"
+npx biome check .
+
+echo "pre-commit: tsc --noEmit"
+npx tsc --noEmit
+
+echo "pre-commit: vitest run"
+npx vitest run --silent
+
+echo "pre-commit: ok"
