@@ -4,14 +4,34 @@ Web client for [simbeam](https://github.com/kei-sidorov/simbeam) — stream an i
 Simulator (or a demo device) from a Mac and control it from the browser: live H.264
 video over WebRTC, taps, swipes and keyboard.
 
-**Status: early.** The product client has not been started yet, and its stack is
-deliberately undecided. What this repo holds today:
+**Status: building.** The product client lives in `src/` — a minimalist,
+monospace web app that pairs from the address bar and streams a simulator.
+Deploys to [app.simbeam.dev](https://app.simbeam.dev).
 
 | Path | What it is |
 |------|------------|
+| [`src/`](src) | The product client. `protocol/` is the DOM-free core (identity, signalling, presence, screenshots); `app/` is the UI (store, controller, three screens). |
 | [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | The full wire protocol — actors, pairing, session handshake, control messages, TURN/subscriptions. Complete enough to implement a client against. |
 | [`reference/client.html`](reference/client.html) | A **working** single-file vanilla client. Implements the whole path: Ed25519 identity, pairing, signalling, answer verification, WebRTC video, touch/keyboard input, presence. The behavioral reference for everything built here. |
-| [`CLAUDE.md`](CLAUDE.md) | Working instructions for the coding agent (in Russian). |
+| [`CLAUDE.md`](CLAUDE.md) | Working instructions for the coding agent (in Russian) — stack, layout, rules. |
+
+## Stack
+
+Vite + TypeScript (strict), no UI framework, **zero runtime dependencies** —
+just browser APIs (WebCrypto, WebRTC, WebSocket). Biome for lint/format, Vitest
+for tests, JetBrains Mono self-hosted. The whole app is ~8 KB of gzipped JS.
+
+```bash
+npm install        # also installs the pre-commit hook (lint + typecheck + test)
+npm run dev        # dev server at http://localhost:5173
+npm test           # unit + render tests
+npm run build      # typechecked production build → dist/
+```
+
+**Pairing is address-bar only.** There is no QR scanner in the browser: open the
+pairing URL the daemon prints, confirm on the "Pair this Mac?" screen, and the
+Mac is saved. Everything the page needs rides in the URL fragment
+(`#signal=…&daemon=…&pair=…`), which never leaves the device.
 
 The server side — the macOS daemon `simbeamd` and the signalling broker
 `simbeam-signal` — is open source and lives in the
