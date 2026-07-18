@@ -1,9 +1,10 @@
 import type { KV } from "../protocol/identity";
 
-/** A Mac the user has paired with — pinned permanently until unpaired. */
+/**
+ * A Mac the user has paired with — pinned permanently until unpaired. The broker
+ * is not stored per-Mac: every Mac is reached through the single {@link SIGNAL_URL}.
+ */
 export interface SavedMac {
-  /** Broker WebSocket URL. */
-  signal: string;
   /** Daemon id (public key), also the answer-verification key. */
   daemon: string;
   /** Display name, learned from the daemon's `hello`. */

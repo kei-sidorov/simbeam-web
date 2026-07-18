@@ -1,3 +1,4 @@
+import { SIGNAL_URL } from "../config";
 import { type SimInfo, deviceKind } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
 import type { Intents } from "./controller";
@@ -27,7 +28,7 @@ function shellLabel(right: string): HTMLElement {
 
 function pairingScreen(st: State, intents: Intents): HTMLElement {
   const p = st.pairing;
-  const host = p ? new URL(p.signal.replace(/^ws/, "http")).host : "";
+  const host = new URL(SIGNAL_URL.replace(/^ws/, "http")).host;
   const pane = h(
     "div",
     { class: "pane" },

@@ -25,24 +25,29 @@ describe("enrollProof", () => {
 });
 
 describe("parsePairingFragment", () => {
-  it("parses a full fragment", () => {
+  it("parses daemon and pair", () => {
+    const p = parsePairingFragment("#daemon=DKEY&pair=SECRET");
+    expect(p).toEqual({ daemon: "DKEY", pair: "SECRET" });
+  });
+
+  it("ignores a legacy signal parameter", () => {
     const p = parsePairingFragment("#signal=wss://b/ws&daemon=DKEY&pair=SECRET");
-    expect(p).toEqual({ signal: "wss://b/ws", daemon: "DKEY", pair: "SECRET" });
+    expect(p).toEqual({ daemon: "DKEY", pair: "SECRET" });
   });
 
   it("tolerates a missing leading hash", () => {
-    const p = parsePairingFragment("signal=wss://b/ws&daemon=DKEY&pair=SECRET");
+    const p = parsePairingFragment("daemon=DKEY&pair=SECRET");
     expect(p?.daemon).toBe("DKEY");
   });
 
-  it("returns null when any parameter is missing", () => {
-    expect(parsePairingFragment("#signal=x&daemon=y")).toBeNull();
-    expect(parsePairingFragment("#daemon=y&pair=z")).toBeNull();
+  it("returns null when a parameter is missing", () => {
+    expect(parsePairingFragment("#daemon=y")).toBeNull();
+    expect(parsePairingFragment("#pair=z")).toBeNull();
     expect(parsePairingFragment("")).toBeNull();
   });
 
   it("url-decodes values", () => {
-    const p = parsePairingFragment("#signal=wss%3A%2F%2Fb%2Fws&daemon=d&pair=p");
-    expect(p?.signal).toBe("wss://b/ws");
+    const p = parsePairingFragment("#daemon=d&pair=a%20b");
+    expect(p?.pair).toBe("a b");
   });
 });

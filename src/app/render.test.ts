@@ -24,9 +24,7 @@ describe("render", () => {
   it("lists paired Macs with presence text", () => {
     const root = mount({
       route: "main",
-      macs: [
-        { signal: "wss://b/ws", daemon: "D1", name: "Kirill's MacBook Pro", osVersion: "15.4" },
-      ],
+      macs: [{ daemon: "D1", name: "Kirill's MacBook Pro", osVersion: "15.4" }],
       presence: { D1: true },
     });
     expect(root.textContent).toContain("Kirill's MacBook Pro");
@@ -37,7 +35,7 @@ describe("render", () => {
   it("shows the dialing phase on a Mac row", () => {
     const root = mount({
       route: "main",
-      macs: [{ signal: "wss://b/ws", daemon: "D1", name: "Mac" }],
+      macs: [{ daemon: "D1", name: "Mac" }],
       dialingDaemon: "D1",
       phase: "ice",
     });
@@ -47,7 +45,7 @@ describe("render", () => {
   it("renders the simulators list with state + version", () => {
     const root = mount({
       route: "list",
-      connectedMac: { signal: "wss://b/ws", daemon: "D1", name: "Mac", osVersion: "15.4" },
+      connectedMac: { daemon: "D1", name: "Mac", osVersion: "15.4" },
       presence: { D1: true },
       sims: [
         { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },

@@ -1,3 +1,4 @@
+import { SIGNAL_URL } from "../config";
 import { parsePairingFragment } from "../protocol/enroll";
 import type { Identity, KV } from "../protocol/identity";
 import type { ControlReply, SimInfo } from "../protocol/messages";
@@ -71,15 +72,9 @@ export class Controller implements Intents {
     this.presence?.close();
     this.presence = null;
     if (!macs.length) return;
-    // One watcher per broker; in practice there is a single signal URL.
-    const signals = [...new Set(macs.map((m) => m.signal))];
-    // Only the first broker is watched here; grouping is kept simple because
-    // all a user's Macs share one broker in every real deployment.
-    const signal = signals[0];
-    if (!signal) return;
-    const daemons = macs.filter((m) => m.signal === signal).map((m) => m.daemon);
+    const daemons = macs.map((m) => m.daemon);
     this.presence = new PresenceWatcher({
-      signal,
+      signal: SIGNAL_URL,
       daemons,
       onUpdate: (states) =>
         this.store.set({ presence: { ...this.store.get().presence, ...states } }),
@@ -105,7 +100,7 @@ export class Controller implements Intents {
     const p = this.store.get().pairing;
     if (!p) return;
     this.store.set({ pairingBusy: true, pairingError: null });
-    this.dial({ signal: p.signal, daemon: p.daemon, pair: p.pair }, { enrolling: true });
+    this.dial({ signal: SIGNAL_URL, daemon: p.daemon, pair: p.pair }, { enrolling: true });
   }
 
   cancelPairing(): void {
@@ -127,7 +122,7 @@ export class Controller implements Intents {
       return;
     }
     this.store.set({ dialingDaemon: mac.daemon, connectedMac: mac });
-    this.dial({ signal: mac.signal, daemon: mac.daemon, pair: null }, { enrolling: false });
+    this.dial({ signal: SIGNAL_URL, daemon: mac.daemon, pair: null }, { enrolling: false });
   }
 
   cancelDial(): void {
@@ -175,7 +170,7 @@ export class Controller implements Intents {
     // Pin optimistically; `hello` (paired:true) is the true confirmation and
     // fills in the name/osVersion. We save now so a drop reconnects key-only.
     const p = this.store.get().pairing;
-    const mac: SavedMac = { signal: target.signal, daemon: target.daemon, name: "Mac" };
+    const mac: SavedMac = { daemon: target.daemon, name: "Mac" };
     const macs = saveMac(this.kv, mac);
     this.store.set({ macs, connectedMac: mac, pairing: p });
     this.startPresence(macs);
@@ -305,7 +300,7 @@ export class Controller implements Intents {
       const st = this.store.get();
       if (this.intentionalClose || st.route === "main") return;
       if (st.route === "sim") this.store.set({ canvas: "connecting" });
-      this.dial({ signal: mac.signal, daemon: mac.daemon, pair: null }, { enrolling: false });
+      this.dial({ signal: SIGNAL_URL, daemon: mac.daemon, pair: null }, { enrolling: false });
     }, this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, RECONNECT_MAX_MS);
   }

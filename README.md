@@ -30,8 +30,10 @@ npm run build      # typechecked production build → dist/
 
 **Pairing is address-bar only.** There is no QR scanner in the browser: open the
 pairing URL the daemon prints, confirm on the "Pair this Mac?" screen, and the
-Mac is saved. Everything the page needs rides in the URL fragment
-(`#signal=…&daemon=…&pair=…`), which never leaves the device.
+Mac is saved. The daemon and one-time secret ride in the URL fragment
+(`#daemon=…&pair=…`), which never leaves the device. The broker is fixed —
+`signal.simbeam.dev` — not carried in the URL (override with `VITE_SIGNAL_URL`
+for a local broker).
 
 The server side — the macOS daemon `simbeamd` and the signalling broker
 `simbeam-signal` — is open source and lives in the

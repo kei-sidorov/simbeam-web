@@ -30,8 +30,6 @@ export async function enrollProof(
 }
 
 export interface PairingParams {
-  /** Broker WebSocket URL to dial. */
-  signal: string;
   /** The daemon's public key — pinned as the Mac's identity. */
   daemon: string;
   /** One-time pairing secret S. */
@@ -39,13 +37,13 @@ export interface PairingParams {
 }
 
 /**
- * Parses a pairing URL fragment (`#signal=…&daemon=…&pair=…`).
- * Returns null unless all three parameters are present.
+ * Parses a pairing URL fragment (`#daemon=…&pair=…`). Returns null unless both
+ * parameters are present. Any `signal` the daemon still emits is ignored — this
+ * client only ever talks to the broker configured in {@link SIGNAL_URL}.
  */
 export function parsePairingFragment(hash: string): PairingParams | null {
   const f = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
-  const signal = f.get("signal");
   const daemon = f.get("daemon");
   const pair = f.get("pair");
-  return signal && daemon && pair ? { signal, daemon, pair } : null;
+  return daemon && pair ? { daemon, pair } : null;
 }
