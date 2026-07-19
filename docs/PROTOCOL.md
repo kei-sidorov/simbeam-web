@@ -278,7 +278,6 @@ The client sends:
 
 | Command | Shape | Meaning |
 |---------|-------|---------|
-| list    | `{"type":"list"}` | enumerate the Mac's simulators |
 | boot    | `{"type":"boot","udid":"<udid>"}` | power on a simulator |
 | shutdown| `{"type":"shutdown","udid":"<udid>"}` | power off a simulator |
 | attach  | `{"type":"attach","udid":"<udid>","scale":<0.25–1.0>,"bitrate":<bits/s>}` | start streaming this simulator's screen; `scale`/`bitrate` optional, see [Video quality](#video-quality) |
@@ -298,7 +297,6 @@ The daemon replies on the same channel:
 | Reply | Shape |
 |-------|-------|
 | hello    | `{"type":"hello","name":"<Mac name>","osVersion":"<macOS version>","paired":true}` |
-| sims     | `{"type":"sims","sims":[{"udid":..,"name":..,"state":..,"os_version":..}, …]}` |
 | booted   | `{"type":"booted","udid":"<udid>"}` |
 | shutdown | `{"type":"shutdown","udid":"<udid>"}` (if it was the streaming sim, a `detached` is sent first) |
 | attached | `{"type":"attached","w":<px>,"h":<px>}` (the simulator's **native** screen size — see below) |
@@ -319,12 +317,18 @@ moment the client opens the `control` channel (before any command). It carries:
 
 **Bulk — a DataChannel labeled `bulk`** is **reliable and ordered**, and unlike `control` it is
 created by the **client**; the daemon routes it by label. It carries what `control` must not: a
-request too large for one message, or one that may not be silently dropped. Two requests exist:
+request too large for one message, or one that may not be silently dropped. Three requests exist:
 
 | Request | Shape | Reply |
 |---------|-------|-------|
+| list       | `{"type":"list"}` | `{"type":"sims","sims":[{"udid":..,"name":..,"state":..,"os_version":..}, …]}` — the Mac's simulators (empty list → `"sims":[]`) |
 | screenshot | `{"type":"screenshot"}` | a full-resolution PNG, chunked — see [Full-resolution screenshots](#full-resolution-screenshots) |
 | quality    | `{"type":"quality","scale":<0.25–1.0>,"bitrate":<bits/s>}` | `{"type":"quality","scale":…,"bitrate":…}` — what actually took effect |
+
+`list` rides `bulk` (not `control`) because the simulator list **must** arrive: on a lossy path an
+unreliable `list`/`sims` is dropped with no retransmission and the list never shows. The client
+requests it once the channel opens and re-requests until a `sims` reply lands; `list` is idempotent
+on the daemon, so a duplicate is harmless.
 
 Every bulk request gets a reply: the payload above, or
 `{"type":"error","msg":"<reason>","code":"<machine code>"}` — branch on `code`, never on `msg`. Keep

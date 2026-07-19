@@ -55,6 +55,7 @@ export interface HelloMsg {
   paired?: boolean;
 }
 
+/** `sims` arrives on the reliable bulk channel (not control), as a text frame. */
 export interface SimsMsg {
   type: "sims";
   sims?: SimInfo[];
@@ -83,7 +84,6 @@ export interface DetachedMsg {
 
 export type ControlReply =
   | HelloMsg
-  | SimsMsg
   | BootedMsg
   | ShutdownMsg
   | AttachedMsg

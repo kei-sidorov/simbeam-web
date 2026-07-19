@@ -1,7 +1,7 @@
 import { SIGNAL_URL } from "../config";
 import { parsePairingFragment } from "../protocol/enroll";
 import type { Identity, KV } from "../protocol/identity";
-import type { ControlReply, SimInfo } from "../protocol/messages";
+import type { ControlReply, SimInfo, SimsMsg } from "../protocol/messages";
 import { PresenceWatcher } from "../protocol/presence";
 import { ScreenshotReceiver } from "../protocol/screenshot";
 import { Session, type SessionTarget } from "../protocol/session";
@@ -32,6 +32,8 @@ export interface Intents {
 }
 
 const RECONNECT_MAX_MS = 15_000;
+/** Re-request the simulator list this often until a `sims` reply arrives. */
+const LIST_RETRY_MS = 1000;
 
 export class Controller implements Intents {
   private session: Session | null = null;
@@ -40,6 +42,7 @@ export class Controller implements Intents {
   private shot: ScreenshotReceiver | null = null;
 
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private listRetryTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectDelay = 1000;
   private bootTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -142,9 +145,10 @@ export class Controller implements Intents {
       },
       onControlOpen: (send) => {
         this.send = send;
-        send({ type: "list" });
       },
       onControlReply: (reply) => this.onControlReply(reply, opts.enrolling),
+      // `list`/`sims` live on the reliable bulk channel; ask once it opens.
+      onBulkOpen: () => this.requestSimList(),
       onBulkFrame: (frame) => this.onBulkFrame(frame),
       onVideoTrack: (stream) => {
         this.video.srcObject = stream;
@@ -196,17 +200,6 @@ export class Controller implements Intents {
         }
         break;
       }
-      case "sims": {
-        const sims = reply.sims ?? [];
-        const patch: Partial<State> = { sims, listReconnecting: false };
-        if (st.dialingDaemon || st.route === "pairing") {
-          patch.dialingDaemon = null;
-          patch.route = "list";
-          patch.showShutdownSims = false; // fresh list starts collapsed
-        }
-        this.store.set(patch);
-        break;
-      }
       case "booted": {
         const booting = { ...st.booting };
         delete booting[reply.udid];
@@ -238,7 +231,48 @@ export class Controller implements Intents {
     }
   }
 
+  /** Ask the daemon for the simulator list; retry until a `sims` reply lands. */
+  private requestSimList(): void {
+    this.session?.sendBulk({ type: "list" });
+    if (this.listRetryTimer) return;
+    this.listRetryTimer = setInterval(() => {
+      this.session?.sendBulk({ type: "list" });
+    }, LIST_RETRY_MS);
+  }
+
+  private stopSimListRetry(): void {
+    if (this.listRetryTimer) {
+      clearInterval(this.listRetryTimer);
+      this.listRetryTimer = null;
+    }
+  }
+
+  private handleSims(sims: SimInfo[]): void {
+    const st = this.store.get();
+    const patch: Partial<State> = { sims, listReconnecting: false };
+    if (st.dialingDaemon || st.route === "pairing") {
+      patch.dialingDaemon = null;
+      patch.route = "list";
+      patch.showShutdownSims = false; // fresh list starts collapsed
+    }
+    this.store.set(patch);
+  }
+
   private onBulkFrame(frame: string | Uint8Array): void {
+    // The bulk channel multiplexes typed text frames (sims / screenshot header /
+    // quality echo / error) with binary screenshot chunks. Route sims by type;
+    // everything else feeds the screenshot reassembler.
+    if (typeof frame === "string") {
+      let msg: { type?: string } | null = null;
+      try {
+        msg = JSON.parse(frame);
+      } catch {}
+      if (msg?.type === "sims") {
+        this.stopSimListRetry();
+        this.handleSims((msg as SimsMsg).sims ?? []);
+        return;
+      }
+    }
     if (!this.shot) return;
     const res = this.shot.feed(frame);
     if (res.status === "done") {
@@ -312,6 +346,7 @@ export class Controller implements Intents {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.stopSimListRetry();
     this.session?.close();
     this.session = null;
     this.send = null;

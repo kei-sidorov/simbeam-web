@@ -22,10 +22,12 @@ export type SessionPhase =
 
 export interface SessionCallbacks {
   onPhase(phase: SessionPhase): void;
-  /** Fired when the control channel opens (safe to send commands). */
+  /** Fired when the control channel opens (safe to send input commands). */
   onControlOpen(send: (obj: unknown) => void): void;
   onControlReply(reply: ControlReply): void;
-  /** A binary frame arrived on the bulk channel (screenshot chunk). */
+  /** Fired when the bulk channel opens (safe to send `list`/`screenshot`). */
+  onBulkOpen(): void;
+  /** A frame arrived on the bulk channel (screenshot chunk, or `sims` text). */
   onBulkFrame(frame: string | Uint8Array): void;
   onVideoTrack(stream: MediaStream): void;
   onIceServers(servers: RTCIceServer[]): void;
@@ -80,6 +82,7 @@ export class Session {
     };
     control.onopen = () => this.cb.onControlOpen((obj) => this.sendControl(obj));
     control.onmessage = (ev) => this.cb.onControlReply(JSON.parse(String(ev.data)) as ControlReply);
+    bulk.onopen = () => this.cb.onBulkOpen();
     bulk.onmessage = (ev) => {
       const d = ev.data;
       this.cb.onBulkFrame(d instanceof ArrayBuffer ? new Uint8Array(d) : String(d));
