@@ -63,16 +63,18 @@ describe("render", () => {
     expect(root.textContent).toContain("Reconnecting");
   });
 
-  it("renders the playing simulator screen with a toolbar", () => {
+  it("renders the playing simulator screen with an icon toolbar", () => {
     const root = mount({
       route: "sim",
       currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
       canvas: "playing",
     });
     expect(root.textContent).toContain("iPhone 17");
-    expect(root.textContent).toContain("Home");
-    expect(root.textContent).toContain("Shake");
-    expect(root.textContent).toContain("Screenshot");
+    expect(root.querySelector('.capsule-v [aria-label="Home"]')).not.toBeNull();
+    expect(root.querySelector('.capsule-v [aria-label="Shake"]')).not.toBeNull();
+    expect(root.querySelector('.capsule-v [aria-label="Screenshot"]')).not.toBeNull();
+    // Icons, not text labels.
+    expect(root.querySelector(".capsule-v svg")).not.toBeNull();
   });
 
   it("shows Switch On in the switched-off canvas", () => {
@@ -91,7 +93,7 @@ describe("render", () => {
       currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
       canvas: "connecting",
     });
-    expect(root.textContent).not.toContain("Screenshot");
+    expect(root.querySelector(".capsule-v")).toBeNull();
     expect(root.textContent).toContain("Connecting");
   });
 });

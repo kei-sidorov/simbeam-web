@@ -372,6 +372,7 @@ button {
 /* ---- video canvas ---- */
 
 .stage {
+  position: relative;
   background: var(--video-bg);
   padding: 32px 22px;
   display: flex;
@@ -444,41 +445,75 @@ button {
   }
 }
 
-/* ---- toolbar capsule ---- */
+/* ---- vertical command capsule (trailing edge of the canvas) ---- */
 
-.toolbar {
-  display: flex;
-  justify-content: center;
-  padding: 16px;
-  border-top: 1px solid var(--divider);
+.toolbar-v {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
-.capsule {
+.capsule-v {
   display: inline-flex;
-  gap: 3px;
-  background: var(--hover-ghost);
-  border: 1px solid var(--border);
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
   border-radius: 999px;
-  padding: 5px;
+  /* liquid glass over the dark stage */
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
-.capsule button {
-  padding: 8px 18px;
-  font-size: 12px;
+.cap-btn {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: none;
-  border-radius: 999px;
-  color: var(--text);
+  border-radius: 50%;
+  color: #e8e8ef;
   transition: background 0.12s ease;
 }
 
-.capsule button:hover {
-  background: var(--card);
+.cap-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
-.capsule button:disabled {
-  color: var(--text-3);
+.cap-btn:disabled {
+  color: rgba(232, 232, 239, 0.35);
   cursor: default;
+}
+
+.cap-btn .spinner {
+  width: 18px;
+  height: 18px;
+  border-color: rgba(232, 232, 239, 0.25);
+  border-top-color: #e8e8ef;
+}
+
+/* On viewports too narrow to hold the capsule in the letterbox, drop it back
+   under the canvas as a horizontal row so it never overlaps the video. */
+@media (max-width: 560px) {
+  .stage {
+    flex-direction: column;
+  }
+  .toolbar-v {
+    position: static;
+    transform: none;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: 16px;
+  }
+  .capsule-v {
+    flex-direction: row;
+  }
 }
 
 /* ---- banners ---- */

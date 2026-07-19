@@ -3,7 +3,7 @@ import { type SimInfo, deviceKind } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
 import type { Intents } from "./controller";
 import { h } from "./dom";
-import { macIcon, simIcon } from "./icons";
+import { cameraIcon, homeIcon, macIcon, shakeIcon, simIcon } from "./icons";
 import { PHASE_LABEL } from "./phases";
 import type { SavedMac } from "./storage";
 import type { CanvasState, State } from "./store";
@@ -299,32 +299,47 @@ function simScreen(st: State, intents: Intents, video: HTMLVideoElement): HTMLEl
     );
   }
 
-  const stage = h(
-    "div",
-    { class: "stage" },
-    h("div", { class: "stage-inner" }, ...stageChildren.filter(Boolean).map((c) => c as Node)),
-  );
-
+  // The command capsule sits vertically at the canvas's trailing edge and shows
+  // only while the session is live (playing or paused). It duplicates the
+  // ⋯ menu — icons, one tap away.
   const showToolbar = st.canvas === "playing" || st.canvas === "paused";
   const toolbar =
     showToolbar &&
     h(
       "div",
-      { class: "toolbar" },
+      { class: "toolbar-v" },
       h(
         "div",
-        { class: "capsule" },
-        h("button", { onclick: () => intents.home() }, "Home"),
-        h("button", { onclick: () => intents.shake() }, "Shake"),
-        h(
-          "button",
-          { disabled: st.screenshotBusy, onclick: () => intents.screenshot() },
-          st.screenshotBusy ? "Saving…" : "Screenshot",
-        ),
+        { class: "capsule-v" },
+        iconButton(homeIcon(), "Home", () => intents.home()),
+        iconButton(shakeIcon(), "Shake", () => intents.shake()),
+        st.screenshotBusy
+          ? h(
+              "span",
+              { class: "cap-btn", title: "Saving screenshot…" },
+              h("span", { class: "spinner" }),
+            )
+          : iconButton(cameraIcon(), "Screenshot", () => intents.screenshot()),
       ),
     );
 
-  return h("div", { class: "card" }, topbar, infobar, stage, toolbar || h("span", {}));
+  const stage = h(
+    "div",
+    { class: "stage" },
+    h("div", { class: "stage-inner" }, ...stageChildren.filter(Boolean).map((c) => c as Node)),
+    toolbar || h("span", {}),
+  );
+
+  return h("div", { class: "card" }, topbar, infobar, stage);
+}
+
+/** A round icon button with an accessible label (the icon replaces text). */
+function iconButton(icon: SVGElement, label: string, onClick: () => void): HTMLElement {
+  return h(
+    "button",
+    { class: "cap-btn", title: label, "aria-label": label, onclick: onClick },
+    icon,
+  );
 }
 
 /** The three-dots menu — the surface that always carries every action. */
