@@ -21,6 +21,7 @@ export interface Intents {
   openSim(sim: SimInfo): void;
   bootSim(sim: SimInfo): void;
   shutdownSim(sim: SimInfo): void;
+  toggleShutdownSims(): void;
   togglePause(): void;
   home(): void;
   shake(): void;
@@ -201,6 +202,7 @@ export class Controller implements Intents {
         if (st.dialingDaemon || st.route === "pairing") {
           patch.dialingDaemon = null;
           patch.route = "list";
+          patch.showShutdownSims = false; // fresh list starts collapsed
         }
         this.store.set(patch);
         break;
@@ -331,6 +333,7 @@ export class Controller implements Intents {
       sims: [],
       currentSim: null,
       listReconnecting: false,
+      showShutdownSims: false,
       canvas: "connecting",
     });
   }
@@ -364,6 +367,10 @@ export class Controller implements Intents {
     delete booting[sim.udid];
     this.store.set({ booting, sims: markState(st.sims, sim.udid, "Shutdown") });
     if (st.currentSim?.udid === sim.udid) this.store.set({ canvas: "off" });
+  }
+
+  toggleShutdownSims(): void {
+    this.store.set({ showShutdownSims: !this.store.get().showShutdownSims });
   }
 
   private startFakeBoot(udid: string): void {

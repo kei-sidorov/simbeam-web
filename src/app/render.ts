@@ -208,16 +208,44 @@ function listScreen(st: State, intents: Intents): HTMLElement {
     st.listReconnecting &&
     h("div", { class: "banner" }, h("span", { class: "spinner" }), "Reconnecting…");
 
-  const body = st.sims.length
-    ? h("div", { class: "content" }, h("div", {}, ...st.sims.map((s) => simRow(s, st, intents))))
-    : h(
-        "div",
-        { class: "pane" },
-        h("h2", {}, "No simulators"),
-        h("p", {}, "This Mac has no simulators. Create one in Xcode and pull to refresh."),
-      );
+  // Booted (and optimistically booting) simulators stay on top; shut-down ones
+  // collapse behind a toggle so the ones you can use right now lead.
+  const isUp = (s: SimInfo) => s.state === "Booted" || st.booting[s.udid] !== undefined;
+  const up = st.sims.filter(isUp);
+  const down = st.sims.filter((s) => !isUp(s));
+
+  let body: HTMLElement;
+  if (!st.sims.length) {
+    body = h(
+      "div",
+      { class: "pane" },
+      h("h2", {}, "No simulators"),
+      h("p", {}, "This Mac has no simulators. Create one in Xcode and pull to refresh."),
+    );
+  } else {
+    const children: (Node | false)[] = [...up.map((s) => simRow(s, st, intents))];
+    if (down.length) {
+      children.push(shutdownToggle(down.length, st.showShutdownSims, intents));
+      if (st.showShutdownSims) children.push(...down.map((s) => simRow(s, st, intents)));
+    }
+    body = h(
+      "div",
+      { class: "content" },
+      h("div", {}, ...children.filter(Boolean).map((c) => c as Node)),
+    );
+  }
 
   return h("div", { class: "card" }, topbar, banner || h("span", {}), body);
+}
+
+/** The collapsed shut-down section header — click to reveal/hide the rows. */
+function shutdownToggle(count: number, open: boolean, intents: Intents): HTMLElement {
+  return h(
+    "button",
+    { class: `sim-toggle${open ? " open" : ""}`, onclick: () => intents.toggleShutdownSims() },
+    h("span", { class: "sim-toggle-chevron" }, "›"),
+    h("span", {}, `${count} shut down`),
+  );
 }
 
 // ---- Simulator screen ----

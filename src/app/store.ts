@@ -34,6 +34,8 @@ export interface State {
 
   sims: SimInfo[];
   listReconnecting: boolean;
+  /** Whether the collapsed shut-down simulators are revealed on the list. */
+  showShutdownSims: boolean;
 
   /** The simulator currently open on the Simulator screen. */
   currentSim: SimInfo | null;
@@ -58,6 +60,7 @@ export function initialState(): State {
     phase: null,
     sims: [],
     listReconnecting: false,
+    showShutdownSims: false,
     currentSim: null,
     canvas: "connecting",
     booting: {},

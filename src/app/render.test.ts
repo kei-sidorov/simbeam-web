@@ -54,8 +54,48 @@ describe("render", () => {
     });
     expect(root.textContent).toContain("iPhone 17");
     expect(root.textContent).toContain("Booted · iOS 18.4");
-    expect(root.textContent).toContain("Shut Down · iPadOS 18.4");
     expect(root.textContent).toContain("2 simulators");
+  });
+
+  it("keeps shut-down simulators collapsed behind a toggle", () => {
+    const root = mount({
+      route: "list",
+      connectedMac: { daemon: "D1", name: "Mac" },
+      showShutdownSims: false,
+      sims: [
+        { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
+        { udid: "u2", name: "iPad Pro", state: "Shutdown", os_version: "iPadOS 18.4" },
+        { udid: "u3", name: "iPhone SE", state: "Shutdown", os_version: "iOS 17.5" },
+      ],
+    });
+    // Booted one is visible; shut-down rows are hidden behind the toggle.
+    expect(root.textContent).toContain("iPhone 17");
+    expect(root.textContent).not.toContain("iPad Pro");
+    expect(root.textContent).not.toContain("iPhone SE");
+    expect(root.querySelector(".sim-toggle")?.textContent).toContain("2 shut down");
+  });
+
+  it("reveals shut-down simulators when expanded", () => {
+    const root = mount({
+      route: "list",
+      connectedMac: { daemon: "D1", name: "Mac" },
+      showShutdownSims: true,
+      sims: [
+        { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
+        { udid: "u2", name: "iPad Pro", state: "Shutdown", os_version: "iPadOS 18.4" },
+      ],
+    });
+    expect(root.textContent).toContain("iPad Pro");
+    expect(root.querySelector(".sim-toggle.open")).not.toBeNull();
+  });
+
+  it("renders no toggle when every simulator is booted", () => {
+    const root = mount({
+      route: "list",
+      connectedMac: { daemon: "D1", name: "Mac" },
+      sims: [{ udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" }],
+    });
+    expect(root.querySelector(".sim-toggle")).toBeNull();
   });
 
   it("shows a reconnecting banner", () => {
