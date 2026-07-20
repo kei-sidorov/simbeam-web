@@ -72,12 +72,24 @@ function themeToggle(st: State, intents: Intents): HTMLElement {
   );
 }
 
-function shellLabel(right: string, st: State, intents: Intents): HTMLElement {
+/** GitHub repo for the daemon/companion (lives in the main simbeam repo). */
+const COMPANION_REPO = "https://github.com/kei-sidorov/simbeam";
+const AUTHOR_URL = "https://sidorov.tech";
+
+function extLink(href: string, cls: string, text: string): HTMLElement {
+  return h("a", { class: cls, href, target: "_blank", rel: "noopener noreferrer" }, text);
+}
+
+/** Page footer: brand · author · theme toggle. */
+function shellFooter(st: State, intents: Intents): HTMLElement {
   return h(
-    "div",
-    { class: "shell-label" },
-    h("span", {}, "SimBeam · Web"),
-    h("span", { class: "shell-right" }, h("span", {}, right), themeToggle(st, intents)),
+    "footer",
+    { class: "shell-footer" },
+    h("span", { class: "footer-brand" }, "SimBeam"),
+    h("span", { class: "footer-sep" }, "·"),
+    extLink(AUTHOR_URL, "footer-link", "Kei Sidorov"),
+    h("span", { class: "footer-sep" }, "·"),
+    themeToggle(st, intents),
   );
 }
 
@@ -177,7 +189,9 @@ function mainScreen(st: State, intents: Intents): HTMLElement {
       h(
         "p",
         {},
-        "Run the SimBeam companion on your Mac, press ",
+        "Run the ",
+        extLink(COMPANION_REPO, "inline-link", "SimBeam companion"),
+        " on your Mac, press ",
         h("code", {}, "P"),
         " in its terminal, and open the pairing link it prints.",
       ),
@@ -517,10 +531,8 @@ export function render(
   video: HTMLVideoElement,
 ): void {
   let inner: HTMLElement;
-  let label = "Paired via link";
   if (st.route === "pairing") {
     inner = pairingScreen(st, intents);
-    label = "Pairing";
   } else if (st.route === "list") {
     inner = listScreen(st, intents);
   } else if (st.route === "sim") {
@@ -532,7 +544,6 @@ export function render(
   const shell = h(
     "div",
     { class: "shell" },
-    shellLabel(label.toUpperCase(), st, intents),
     inner,
     st.toast &&
       h(
@@ -540,6 +551,7 @@ export function render(
         { class: "footnote", style: st.toast.kind === "error" ? "color:var(--red)" : "" },
         st.toast.text,
       ),
+    shellFooter(st, intents),
   );
 
   root.replaceChildren(shell);
