@@ -39,6 +39,18 @@ function transportBadge(kind: TransportKind | null): HTMLElement | false {
   );
 }
 
+/** Borderless path indicator (coloured dot + label) for a subtitle line. */
+function transportInline(kind: TransportKind | null): HTMLElement | false {
+  if (!kind) return false;
+  const t = TRANSPORT[kind];
+  return h(
+    "span",
+    { class: `net-inline net-${t.cls}`, title: t.title },
+    h("span", { class: "net-dot" }),
+    t.label,
+  );
+}
+
 const THEME_LABEL: Record<State["themePref"], string> = {
   auto: "Auto",
   light: "Light",
@@ -318,27 +330,28 @@ function canvasOverlay(state: CanvasState, sim: SimInfo | null): HTMLElement | f
 function simScreen(st: State, intents: Intents, video: HTMLVideoElement): HTMLElement {
   const sim = st.currentSim;
   const kind = sim ? deviceKind(sim.name) : "phone";
-  const booted = sim?.state === "Booted" || st.canvas === "playing";
+
+  // Version + live path sit as a compact second line under the name — no
+  // separate info bar, no "Booted" (the playing video already says so).
+  const channel = transportInline(st.transport);
+  const subChildren: (Node | string)[] = [];
+  if (sim?.os_version) subChildren.push(sim.os_version);
+  if (channel) {
+    if (subChildren.length) subChildren.push(" · ");
+    subChildren.push(channel);
+  }
 
   const topbar = h(
     "div",
     { class: "topbar" },
     h("button", { class: "btn-ghost btn-back", onclick: () => intents.goList() }, "‹"),
-    h("div", { class: "grow title" }, sim?.name ?? "Simulator"),
-    h("button", { class: "btn-ghost", onclick: () => menu(st, intents) }, "⋯"),
-  );
-
-  const infobar = h(
-    "div",
-    { class: "infobar" },
-    sim && h("span", { class: "chip" }, sim.os_version),
     h(
-      "span",
-      { class: "status" },
-      h("span", { class: `dot dot-${booted ? "online" : "offline"}` }),
-      st.canvas === "off" ? "Shut Down" : booted ? "Booted" : "…",
+      "div",
+      { class: "grow" },
+      h("div", { class: "title" }, sim?.name ?? "Simulator"),
+      subChildren.length ? h("div", { class: "subtitle" }, ...subChildren) : false,
     ),
-    transportBadge(st.transport) || h("span", {}),
+    h("button", { class: "btn-ghost", onclick: () => menu(st, intents) }, "⋯"),
   );
 
   video.className = kind === "legacy" ? "legacy" : "";
@@ -405,7 +418,7 @@ function simScreen(st: State, intents: Intents, video: HTMLVideoElement): HTMLEl
     toolbar || h("span", {}),
   );
 
-  return h("div", { class: "card" }, topbar, infobar, stage);
+  return h("div", { class: "card" }, topbar, stage);
 }
 
 /** A round icon button with an accessible label (the icon replaces text). */

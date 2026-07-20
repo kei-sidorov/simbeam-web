@@ -116,13 +116,18 @@ describe("render", () => {
     expect(badge?.textContent).toContain("LAN");
     expect(badge?.classList.contains("net-lan")).toBe(true);
 
+    // On the stream screen the path shows borderless in the subtitle line.
     const sim = mount({
       route: "sim",
       currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
       canvas: "playing",
       transport: "relay",
     });
-    expect(sim.querySelector(".infobar .net-badge")?.textContent).toContain("REL");
+    const inline = sim.querySelector(".net-inline");
+    expect(inline?.textContent).toContain("REL");
+    expect(inline?.classList.contains("net-rel")).toBe(true);
+    expect(sim.textContent).toContain("iOS 18.4");
+    expect(sim.textContent).not.toContain("Booted");
   });
 
   it("omits the path badge until the transport is known", () => {

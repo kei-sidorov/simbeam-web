@@ -398,6 +398,14 @@ button {
   color: var(--text-2);
 }
 
+/* Borderless variant for a subtitle line (dot keeps the colour signal). */
+.net-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: 0.04em;
+}
+
 .net-dot {
   width: 7px;
   height: 7px;
@@ -415,11 +423,6 @@ button {
 
 .net-rel .net-dot {
   background: var(--amber);
-}
-
-/* On the stream screen the badge sits at the trailing edge of the info bar. */
-.infobar .net-badge {
-  margin-left: auto;
 }
 
 /* ---- empty / onboarding / pairing ---- */
@@ -475,32 +478,6 @@ button {
 .error-text {
   color: var(--red);
   font-size: 12.5px;
-}
-
-/* ---- info bar (stream screen) ---- */
-
-.infobar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 22px;
-  border-bottom: 1px solid var(--divider);
-  max-height: 44px;
-}
-
-.chip {
-  font-size: 11px;
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-2);
-}
-
-.status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
 }
 
 /* ---- video canvas ---- */
@@ -631,22 +608,41 @@ button {
   border-top-color: #e8e8ef;
 }
 
-/* On viewports too narrow to hold the capsule in the letterbox, drop it back
-   under the canvas as a horizontal row so it never overlaps the video. */
+/* On narrow screens keep the capsule vertical at the trailing edge (never a
+   bottom row that eats scarce viewport height) but at half size, and trim the
+   surrounding chrome so the video claims as much height as it can. The right
+   padding carves a gutter the centred video shifts left to clear. */
 @media (max-width: 560px) {
+  #app {
+    padding: 12px 10px;
+  }
   .stage {
-    flex-direction: column;
+    padding: 12px 8px;
+    padding-right: 50px;
+    min-height: 0;
+  }
+  .stage video {
+    max-height: calc(100vh - 150px);
+    min-height: 0;
   }
   .toolbar-v {
-    position: static;
-    transform: none;
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    margin-top: 16px;
+    right: 6px;
   }
   .capsule-v {
-    flex-direction: row;
+    gap: 2px;
+    padding: 4px;
+  }
+  .cap-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .cap-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+  .cap-btn .spinner {
+    width: 14px;
+    height: 14px;
   }
 }
 
