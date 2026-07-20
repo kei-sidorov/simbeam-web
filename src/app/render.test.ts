@@ -21,6 +21,14 @@ describe("render", () => {
     expect(root.textContent).toContain("No Macs paired yet");
   });
 
+  it("renders the theme toggle reflecting the current preference", () => {
+    const root = mount({ route: "main", macs: [], themePref: "dark" });
+    const toggle = root.querySelector(".theme-toggle");
+    expect(toggle).not.toBeNull();
+    expect(toggle?.getAttribute("title")).toBe("Theme: Dark");
+    expect(toggle?.querySelector("svg")).not.toBeNull();
+  });
+
   it("lists paired Macs with presence text", () => {
     const root = mount({
       route: "main",

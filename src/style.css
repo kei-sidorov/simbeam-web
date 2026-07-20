@@ -7,6 +7,7 @@
 }
 
 :root {
+  color-scheme: light;
   --bg: #f1f1f3;
   --card: #ffffff;
   --border: #e5e5e8;
@@ -24,6 +25,33 @@
   --hover-row: #f6f6fb;
   --hover-ghost: #f5f5f7;
   --video-bg: #0d0d11;
+  --shadow-1: rgba(20, 20, 26, 0.05);
+  --shadow-2: rgba(20, 20, 26, 0.04);
+}
+
+/* Dark theme. `data-theme` is set by the no-flash script in index.html and kept
+   in sync by src/app/theme.ts; `auto` resolves to light/dark from the OS. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e0e11;
+  --card: #17171b;
+  --border: #26262c;
+  --divider: #212127;
+  --text: #ececef;
+  --text-2: #a1a1a9;
+  --text-3: #85858d;
+  --text-faint: #6b6b73;
+  --chevron: #45454d;
+  --accent: #6d71f5;
+  --accent-hover: #8488ff;
+  --green: #3ad088;
+  --red: #e5695f;
+  --dot-gray: #4a4a52;
+  --hover-row: #1e1e25;
+  --hover-ghost: #202027;
+  --video-bg: #060608;
+  --shadow-1: rgba(0, 0, 0, 0.4);
+  --shadow-2: rgba(0, 0, 0, 0.28);
 }
 
 * {
@@ -73,12 +101,44 @@ button {
   text-transform: uppercase;
 }
 
+.shell-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-faint);
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--hover-ghost);
+  border-color: var(--border);
+}
+
+.theme-toggle svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 1px 2px rgba(20, 20, 26, 0.05), 0 10px 30px rgba(20, 20, 26, 0.04);
+  box-shadow: 0 1px 2px var(--shadow-1), 0 10px 30px var(--shadow-2);
 }
 
 /* ---- top bar ---- */
@@ -392,7 +452,7 @@ button {
   padding: 3px 9px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: #5b5b62;
+  color: var(--text-2);
 }
 
 .status {

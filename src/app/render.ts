@@ -3,7 +3,7 @@ import { type SimInfo, deviceKind } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
 import type { Intents } from "./controller";
 import { h } from "./dom";
-import { cameraIcon, homeIcon, macIcon, shakeIcon, simIcon } from "./icons";
+import { cameraIcon, homeIcon, macIcon, shakeIcon, simIcon, themeIcon } from "./icons";
 import { PHASE_LABEL } from "./phases";
 import type { SavedMac } from "./storage";
 import type { CanvasState, State } from "./store";
@@ -20,8 +20,34 @@ function dot(p: Presence): HTMLElement {
   return h("span", { class: `dot dot-${p}` });
 }
 
-function shellLabel(right: string): HTMLElement {
-  return h("div", { class: "shell-label" }, h("span", {}, "SimBeam · Web"), h("span", {}, right));
+const THEME_LABEL: Record<State["themePref"], string> = {
+  auto: "Auto",
+  light: "Light",
+  dark: "Dark",
+};
+
+/** Cycles auto → light → dark; the glyph reflects the current preference. */
+function themeToggle(st: State, intents: Intents): HTMLElement {
+  const label = `Theme: ${THEME_LABEL[st.themePref]}`;
+  return h(
+    "button",
+    {
+      class: "theme-toggle",
+      title: label,
+      "aria-label": label,
+      onclick: () => intents.cycleTheme(),
+    },
+    themeIcon(st.themePref),
+  );
+}
+
+function shellLabel(right: string, st: State, intents: Intents): HTMLElement {
+  return h(
+    "div",
+    { class: "shell-label" },
+    h("span", {}, "SimBeam · Web"),
+    h("span", { class: "shell-right" }, h("span", {}, right), themeToggle(st, intents)),
+  );
 }
 
 // ---- Pairing confirmation ----
@@ -472,7 +498,7 @@ export function render(
   const shell = h(
     "div",
     { class: "shell" },
-    shellLabel(label.toUpperCase()),
+    shellLabel(label.toUpperCase(), st, intents),
     inner,
     st.toast &&
       h(

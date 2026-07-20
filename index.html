@@ -3,8 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="light" />
+  <meta name="color-scheme" content="light dark" />
   <title>SimBeam</title>
+  <script>
+    // Resolve the saved theme before first paint so there is no light-mode flash.
+    // Mirrors src/app/theme.ts; kept dependency-free and inline on purpose.
+    (function () {
+      try {
+        var p = localStorage.getItem("simbeam_theme") || "auto";
+        var dark =
+          p === "dark" ||
+          (p !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        var t = dark ? "dark" : "light";
+        document.documentElement.dataset.theme = t;
+        document.querySelector('meta[name="color-scheme"]').setAttribute("content", t);
+      } catch (e) {}
+    })();
+  </script>
   <script type="module" src="/src/main.ts"></script>
 </head>
 <body>

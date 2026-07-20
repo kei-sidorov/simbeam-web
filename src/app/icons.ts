@@ -1,7 +1,8 @@
 import type { DeviceKind } from "../protocol/messages";
 import { svg } from "./dom";
 
-const stroke = "#6b6b72";
+// Device glyphs inherit the container's text colour so they adapt to the theme.
+const stroke = "currentColor";
 
 export function macIcon(): SVGElement {
   return svg([
@@ -103,4 +104,36 @@ export function cameraIcon(): SVGElement {
     },
     { tag: "circle", attrs: { cx: 12, cy: 13, r: 3, ...line } },
   ]);
+}
+
+// ---- theme toggle glyphs (Lucide: sun / moon / contrast) ----
+
+export function sunIcon(): SVGElement {
+  return svg([
+    { tag: "circle", attrs: { cx: 12, cy: 12, r: 4, ...line } },
+    { tag: "path", attrs: { d: "M12 2v2", ...line } },
+    { tag: "path", attrs: { d: "M12 20v2", ...line } },
+    { tag: "path", attrs: { d: "m4.9 4.9 1.4 1.4", ...line } },
+    { tag: "path", attrs: { d: "m17.7 17.7 1.4 1.4", ...line } },
+    { tag: "path", attrs: { d: "M2 12h2", ...line } },
+    { tag: "path", attrs: { d: "M20 12h2", ...line } },
+    { tag: "path", attrs: { d: "m6.3 17.7-1.4 1.4", ...line } },
+    { tag: "path", attrs: { d: "m19.1 4.9-1.4 1.4", ...line } },
+  ]);
+}
+
+export function moonIcon(): SVGElement {
+  return svg([{ tag: "path", attrs: { d: "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z", ...line } }]);
+}
+
+/** Half-filled circle — the "auto / follow system" state. */
+export function autoIcon(): SVGElement {
+  return svg([
+    { tag: "circle", attrs: { cx: 12, cy: 12, r: 9, ...line } },
+    { tag: "path", attrs: { d: "M12 3a9 9 0 0 1 0 18Z", fill: "currentColor" } },
+  ]);
+}
+
+export function themeIcon(pref: "auto" | "light" | "dark"): SVGElement {
+  return pref === "light" ? sunIcon() : pref === "dark" ? moonIcon() : autoIcon();
 }

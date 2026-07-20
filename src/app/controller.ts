@@ -8,6 +8,7 @@ import { Session, type SessionTarget } from "../protocol/session";
 import { FAKE_BOOT_MS } from "./phases";
 import { type SavedMac, loadMacs, removeMac, saveMac } from "./storage";
 import type { State, Store } from "./store";
+import { applyTheme, loadThemePref, nextThemePref, saveThemePref, watchSystemTheme } from "./theme";
 
 /** Intents the UI can trigger; the controller owns all connection logic. */
 export interface Intents {
@@ -18,6 +19,7 @@ export interface Intents {
   unpairMac(mac: SavedMac): void;
   goMain(): void;
   goList(): void;
+  cycleTheme(): void;
   openSim(sim: SimInfo): void;
   bootSim(sim: SimInfo): void;
   shutdownSim(sim: SimInfo): void;
@@ -64,10 +66,24 @@ export class Controller implements Intents {
   }
 
   init(): void {
+    const themePref = loadThemePref(this.kv);
+    applyTheme(themePref);
+    // In `auto`, follow the OS live — `data-theme` re-resolves, no re-render needed.
+    watchSystemTheme(() => {
+      if (this.store.get().themePref === "auto") applyTheme("auto");
+    });
+
     const pairing = parsePairingFragment(location.hash);
     const macs = loadMacs(this.kv);
-    this.store.set({ macs, pairing, route: pairing ? "pairing" : "main" });
+    this.store.set({ themePref, macs, pairing, route: pairing ? "pairing" : "main" });
     this.startPresence(macs);
+  }
+
+  cycleTheme(): void {
+    const pref = nextThemePref(this.store.get().themePref);
+    saveThemePref(this.kv, pref);
+    applyTheme(pref);
+    this.store.set({ themePref: pref });
   }
 
   // ---- presence ----

@@ -3,6 +3,7 @@ import type { SimInfo } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
 import type { SessionPhase } from "../protocol/session";
 import type { SavedMac } from "./storage";
+import type { ThemePref } from "./theme";
 
 export type Route = "main" | "pairing" | "list" | "sim";
 
@@ -44,6 +45,9 @@ export interface State {
   booting: Record<string, number>;
   screenshotBusy: boolean;
 
+  /** Light/dark preference; `auto` follows the OS. Applied to <html data-theme>. */
+  themePref: ThemePref;
+
   toast: Toast | null;
 }
 
@@ -65,6 +69,7 @@ export function initialState(): State {
     canvas: "connecting",
     booting: {},
     screenshotBusy: false,
+    themePref: "auto",
     toast: null,
   };
 }
