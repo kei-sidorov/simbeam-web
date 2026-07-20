@@ -74,7 +74,7 @@ function themeToggle(st: State, intents: Intents): HTMLElement {
 
 /** GitHub repo for the daemon/companion (lives in the main simbeam repo). */
 const COMPANION_REPO = "https://github.com/kei-sidorov/simbeam";
-const AUTHOR_URL = "https://sidorov.tech";
+const AUTHOR_URL = "https://sidorov.tech/en";
 
 function extLink(href: string, cls: string, text: string): HTMLElement {
   return h("a", { class: cls, href, target: "_blank", rel: "noopener noreferrer" }, text);
