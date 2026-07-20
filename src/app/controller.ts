@@ -154,6 +154,7 @@ export class Controller implements Intents {
   private dial(target: SessionTarget, opts: { enrolling: boolean }): void {
     this.intentionalClose = false;
     this.teardownSession();
+    this.store.set({ transport: null }); // unknown until ICE settles
     const session = new Session(target, this.identity, {
       onPhase: (phase) => {
         this.store.set({ phase });
@@ -170,6 +171,7 @@ export class Controller implements Intents {
         this.video.srcObject = stream;
       },
       onIceServers: () => {},
+      onTransport: (kind) => this.store.set({ transport: kind }),
       onPaired: () => this.onPaired(target),
       onAuthFail: () => {
         this.toast("Authentication failed — possible man-in-the-middle. Re-pair.", "error");
@@ -338,6 +340,7 @@ export class Controller implements Intents {
   private onDrop(): void {
     if (this.intentionalClose) return;
     const st = this.store.get();
+    this.store.set({ transport: null }); // path is unknown until we reconnect
     if (st.route === "list") this.store.set({ listReconnecting: true });
     if (st.route === "sim") this.store.set({ canvas: "disconnected" });
     this.scheduleReconnect();
@@ -381,6 +384,7 @@ export class Controller implements Intents {
       connectedMac: null,
       dialingDaemon: null,
       phase: null,
+      transport: null,
       sims: [],
       currentSim: null,
       listReconnecting: false,

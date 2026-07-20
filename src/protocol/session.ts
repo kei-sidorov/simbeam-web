@@ -20,6 +20,23 @@ export type SessionPhase =
   | "connected"
   | "failed";
 
+/** How the media/data actually flow once ICE settles. */
+export type TransportKind =
+  | "lan" // both ends `host` — same local network
+  | "p2p" // reflexive candidate — NAT traversed, still direct
+  | "relay"; // routed through a TURN relay
+
+/**
+ * Classify the live path from the selected ICE pair's candidate types.
+ * Any relay end means relayed; two host ends means LAN; anything else
+ * (server/peer-reflexive) is a NAT-traversed direct link.
+ */
+export function classifyTransport(local: string, remote: string): TransportKind {
+  if (local === "relay" || remote === "relay") return "relay";
+  if (local === "host" && remote === "host") return "lan";
+  return "p2p";
+}
+
 export interface SessionCallbacks {
   onPhase(phase: SessionPhase): void;
   /** Fired when the control channel opens (safe to send input commands). */
@@ -31,6 +48,8 @@ export interface SessionCallbacks {
   onBulkFrame(frame: string | Uint8Array): void;
   onVideoTrack(stream: MediaStream): void;
   onIceServers(servers: RTCIceServer[]): void;
+  /** The live path (LAN / P2P / relay), read from ICE stats once connected. */
+  onTransport(kind: TransportKind): void;
   /** Pairing/enrollment succeeded — pin the Mac now (hello confirms). */
   onPaired?(): void;
   /** Fatal: the answer's signature did not match the pinned daemon key. */
@@ -91,8 +110,10 @@ export class Session {
     pc.onconnectionstatechange = () => {
       if (!this.pc) return;
       const s = this.pc.connectionState;
-      if (s === "connected") this.cb.onPhase("connected");
-      else if (s === "failed") {
+      if (s === "connected") {
+        this.cb.onPhase("connected");
+        void this.reportTransport();
+      } else if (s === "failed") {
         this.cb.onPhase("failed");
         this.cb.onUpsell();
       } else if (s === "disconnected") {
@@ -195,6 +216,44 @@ export class Session {
     ws.onclose = () => {
       if (this.alive) this.cb.onDrop();
     };
+  }
+
+  /** Inspect ICE stats for the nominated pair and report the live path. */
+  private async reportTransport(): Promise<void> {
+    const pc = this.pc;
+    if (!pc) return;
+    let stats: RTCStatsReport;
+    try {
+      stats = await pc.getStats();
+    } catch {
+      return;
+    }
+    if (!this.alive) return;
+
+    // The selected pair: prefer the transport's pointer, else the nominated,
+    // succeeded candidate-pair. Field names vary a little across browsers.
+    // (RTCStatsReport is Map-like but exposes only forEach for iteration.)
+    type Pair = { localCandidateId?: string; remoteCandidateId?: string };
+    let selectedId: string | undefined;
+    let fallback: Pair | undefined;
+    // biome-ignore lint/complexity/noForEach: RTCStatsReport only offers forEach
+    stats.forEach((r) => {
+      if (r.type === "transport" && r.selectedCandidatePairId) {
+        selectedId = r.selectedCandidatePairId;
+      } else if (
+        r.type === "candidate-pair" &&
+        (r.selected || (r.nominated && r.state === "succeeded"))
+      ) {
+        fallback ??= r as Pair;
+      }
+    });
+    const pair = (selectedId ? (stats.get(selectedId) as Pair | undefined) : undefined) ?? fallback;
+    if (!pair?.localCandidateId || !pair.remoteCandidateId) return;
+
+    const local = stats.get(pair.localCandidateId) as { candidateType?: string } | undefined;
+    const remote = stats.get(pair.remoteCandidateId) as { candidateType?: string } | undefined;
+    if (!local?.candidateType || !remote?.candidateType) return;
+    this.cb.onTransport(classifyTransport(local.candidateType, remote.candidateType));
   }
 
   private minimizeBuffer(): void {

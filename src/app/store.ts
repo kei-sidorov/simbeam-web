@@ -1,7 +1,7 @@
 import type { PairingParams } from "../protocol/enroll";
 import type { SimInfo } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
-import type { SessionPhase } from "../protocol/session";
+import type { SessionPhase, TransportKind } from "../protocol/session";
 import type { SavedMac } from "./storage";
 import type { ThemePref } from "./theme";
 
@@ -32,6 +32,8 @@ export interface State {
   /** Which Mac row is mid-dial (daemon id), for the spinner + phase text. */
   dialingDaemon: string | null;
   phase: SessionPhase | null;
+  /** How the current session connected (LAN / P2P / relay); null until known. */
+  transport: TransportKind | null;
 
   sims: SimInfo[];
   listReconnecting: boolean;
@@ -62,6 +64,7 @@ export function initialState(): State {
     connectedMac: null,
     dialingDaemon: null,
     phase: null,
+    transport: null,
     sims: [],
     listReconnecting: false,
     showShutdownSims: false,

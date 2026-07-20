@@ -1,6 +1,7 @@
 import { SIGNAL_URL } from "../config";
 import { type SimInfo, deviceKind } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
+import type { TransportKind } from "../protocol/session";
 import type { Intents } from "./controller";
 import { h } from "./dom";
 import { cameraIcon, homeIcon, macIcon, shakeIcon, simIcon, themeIcon } from "./icons";
@@ -18,6 +19,24 @@ function presenceOf(map: PresenceMap, daemon: string): Presence {
 
 function dot(p: Presence): HTMLElement {
   return h("span", { class: `dot dot-${p}` });
+}
+
+const TRANSPORT: Record<TransportKind, { cls: string; label: string; title: string }> = {
+  lan: { cls: "lan", label: "LAN", title: "Local network — same LAN as the Mac" },
+  p2p: { cls: "p2p", label: "P2P", title: "Direct peer-to-peer — NAT traversed" },
+  relay: { cls: "rel", label: "REL", title: "Relayed through a TURN server" },
+};
+
+/** The path badge (LAN / P2P / REL); hidden until the session's path is known. */
+function transportBadge(kind: TransportKind | null): HTMLElement | false {
+  if (!kind) return false;
+  const t = TRANSPORT[kind];
+  return h(
+    "span",
+    { class: `net-badge net-${t.cls}`, title: t.title },
+    h("span", { class: "net-dot" }),
+    t.label,
+  );
 }
 
 const THEME_LABEL: Record<State["themePref"], string> = {
@@ -228,6 +247,7 @@ function listScreen(st: State, intents: Intents): HTMLElement {
       h("div", { class: "title" }, mac?.name ?? "Mac"),
       h("div", { class: "subtitle" }, subtitleBits.join(" · ")),
     ),
+    transportBadge(st.transport) || h("span", {}),
   );
 
   const banner =
@@ -318,6 +338,7 @@ function simScreen(st: State, intents: Intents, video: HTMLVideoElement): HTMLEl
       h("span", { class: `dot dot-${booted ? "online" : "offline"}` }),
       st.canvas === "off" ? "Shut Down" : booted ? "Booted" : "…",
     ),
+    transportBadge(st.transport) || h("span", {}),
   );
 
   video.className = kind === "legacy" ? "legacy" : "";

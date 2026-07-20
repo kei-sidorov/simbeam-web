@@ -106,6 +106,34 @@ describe("render", () => {
     expect(root.querySelector(".sim-toggle")).toBeNull();
   });
 
+  it("shows the connection path badge when the transport is known", () => {
+    const list = mount({
+      route: "list",
+      connectedMac: { daemon: "D1", name: "Mac" },
+      transport: "lan",
+    });
+    const badge = list.querySelector(".net-badge");
+    expect(badge?.textContent).toContain("LAN");
+    expect(badge?.classList.contains("net-lan")).toBe(true);
+
+    const sim = mount({
+      route: "sim",
+      currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
+      canvas: "playing",
+      transport: "relay",
+    });
+    expect(sim.querySelector(".infobar .net-badge")?.textContent).toContain("REL");
+  });
+
+  it("omits the path badge until the transport is known", () => {
+    const root = mount({
+      route: "list",
+      connectedMac: { daemon: "D1", name: "Mac" },
+      transport: null,
+    });
+    expect(root.querySelector(".net-badge")).toBeNull();
+  });
+
   it("shows a reconnecting banner", () => {
     const root = mount({ route: "list", listReconnecting: true, sims: [] });
     expect(root.textContent).toContain("Reconnecting");
