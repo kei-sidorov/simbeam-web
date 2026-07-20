@@ -511,11 +511,17 @@ function markState(sims: SimInfo[], udid: string, state: string): SimInfo[] {
   return sims.map((s) => (s.udid === udid ? { ...s, state } : s));
 }
 
-/** Decode the reassembled `sims` bulk transfer (UTF-8 JSON array) to SimInfo[]. */
-function parseSims(bytes: Uint8Array): SimsPayload {
+/**
+ * Decode the reassembled `sims` bulk transfer (UTF-8 JSON) to SimInfo[]. The
+ * daemon chunks its existing wire object, so the payload is
+ * `{"type":"sims","sims":[…]}` — but tolerate a bare `[…]` array as well.
+ */
+export function parseSims(bytes: Uint8Array): SimsPayload {
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes));
-    return Array.isArray(parsed) ? (parsed as SimsPayload) : [];
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    if (Array.isArray(parsed)) return parsed as SimsPayload;
+    const wrapped = (parsed as { sims?: unknown } | null)?.sims;
+    return Array.isArray(wrapped) ? (wrapped as SimsPayload) : [];
   } catch {
     return [];
   }
