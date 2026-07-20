@@ -44,7 +44,7 @@ export interface SessionCallbacks {
   onControlReply(reply: ControlReply): void;
   /** Fired when the bulk channel opens (safe to send `list`/`screenshot`). */
   onBulkOpen(): void;
-  /** A frame arrived on the bulk channel (screenshot chunk, or `sims` text). */
+  /** A frame arrived on the bulk channel (chunked screenshot/sims transfer). */
   onBulkFrame(frame: string | Uint8Array): void;
   onVideoTrack(stream: MediaStream): void;
   onIceServers(servers: RTCIceServer[]): void;

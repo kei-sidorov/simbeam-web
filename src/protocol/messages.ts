@@ -55,11 +55,12 @@ export interface HelloMsg {
   paired?: boolean;
 }
 
-/** `sims` arrives on the reliable bulk channel (not control), as a text frame. */
-export interface SimsMsg {
-  type: "sims";
-  sims?: SimInfo[];
-}
+/**
+ * `sims` arrives on the reliable bulk channel (not control) as a chunked bulk
+ * transfer: a text header {"type":"sims","bytes":N} then binary chunks whose
+ * reassembled bytes are the JSON array `SimInfo[]` (see protocol/bulk.ts).
+ */
+export type SimsPayload = SimInfo[];
 
 export interface BootedMsg {
   type: "booted";

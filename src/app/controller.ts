@@ -1,9 +1,9 @@
 import { SIGNAL_URL } from "../config";
+import { BulkReceiver } from "../protocol/bulk";
 import { parsePairingFragment } from "../protocol/enroll";
 import type { Identity, KV } from "../protocol/identity";
-import type { ControlReply, SimInfo, SimsMsg } from "../protocol/messages";
+import type { ControlReply, SimInfo, SimsPayload } from "../protocol/messages";
 import { PresenceWatcher } from "../protocol/presence";
-import { ScreenshotReceiver } from "../protocol/screenshot";
 import { Session, type SessionTarget } from "../protocol/session";
 import { FAKE_BOOT_MS } from "./phases";
 import { type SavedMac, loadMacs, removeMac, saveMac } from "./storage";
@@ -41,7 +41,8 @@ export class Controller implements Intents {
   private session: Session | null = null;
   private send: ((obj: unknown) => void) | null = null;
   private presence: PresenceWatcher | null = null;
-  private shot: ScreenshotReceiver | null = null;
+  /** Reassembles chunked bulk replies (screenshot / sims); reset after each. */
+  private bulkRx = new BulkReceiver();
 
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private listRetryTimer: ReturnType<typeof setInterval> | null = null;
@@ -165,7 +166,11 @@ export class Controller implements Intents {
       },
       onControlReply: (reply) => this.onControlReply(reply, opts.enrolling),
       // `list`/`sims` live on the reliable bulk channel; ask once it opens.
-      onBulkOpen: () => this.requestSimList(),
+      // Fresh channel → drop any half-received transfer from a prior link.
+      onBulkOpen: () => {
+        this.bulkRx = new BulkReceiver();
+        this.requestSimList();
+      },
       onBulkFrame: (frame) => this.onBulkFrame(frame),
       onVideoTrack: (stream) => {
         this.video.srcObject = stream;
@@ -277,30 +282,29 @@ export class Controller implements Intents {
   }
 
   private onBulkFrame(frame: string | Uint8Array): void {
-    // The bulk channel multiplexes typed text frames (sims / screenshot header /
-    // quality echo / error) with binary screenshot chunks. Route sims by type;
-    // everything else feeds the screenshot reassembler.
-    if (typeof frame === "string") {
-      let msg: { type?: string } | null = null;
-      try {
-        msg = JSON.parse(frame);
-      } catch {}
-      if (msg?.type === "sims") {
-        this.stopSimListRetry();
-        this.handleSims((msg as SimsMsg).sims ?? []);
-        return;
+    // Both large replies — screenshot and sims — arrive as a text header
+    // {"type","bytes"} then binary chunks (≤1 KB each, so they survive IPv6's
+    // small MTU). The reassembler stitches them; we dispatch by the header type.
+    // Bulk is ordered, so transfers never interleave — one receiver suffices.
+    const res = this.bulkRx.feed(frame);
+    if (res.status === "pending") return;
+    this.bulkRx = new BulkReceiver();
+
+    if (res.status === "error") {
+      // Only screenshots surface failures; a failed list just keeps retrying.
+      if (this.store.get().screenshotBusy) {
+        this.store.set({ screenshotBusy: false });
+        this.toast(`Screenshot failed: ${res.msg}`, "error");
       }
+      return;
     }
-    if (!this.shot) return;
-    const res = this.shot.feed(frame);
-    if (res.status === "done") {
-      this.shot = null;
+
+    if (res.kind === "sims") {
+      this.stopSimListRetry();
+      this.handleSims(parseSims(res.bytes));
+    } else {
       this.store.set({ screenshotBusy: false });
-      this.saveScreenshot(res.png);
-    } else if (res.status === "error") {
-      this.shot = null;
-      this.store.set({ screenshotBusy: false });
-      this.toast(`Screenshot failed: ${res.msg}`, "error");
+      this.saveScreenshot(res.bytes);
     }
   }
 
@@ -483,7 +487,6 @@ export class Controller implements Intents {
 
   screenshot(): void {
     if (this.store.get().screenshotBusy) return;
-    this.shot = new ScreenshotReceiver();
     this.store.set({ screenshotBusy: true });
     this.session?.sendBulk({ type: "screenshot" });
   }
@@ -506,4 +509,14 @@ export class Controller implements Intents {
 /** Returns a new sims array with one udid's state replaced. */
 function markState(sims: SimInfo[], udid: string, state: string): SimInfo[] {
   return sims.map((s) => (s.udid === udid ? { ...s, state } : s));
+}
+
+/** Decode the reassembled `sims` bulk transfer (UTF-8 JSON array) to SimInfo[]. */
+function parseSims(bytes: Uint8Array): SimsPayload {
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    return Array.isArray(parsed) ? (parsed as SimsPayload) : [];
+  } catch {
+    return [];
+  }
 }
