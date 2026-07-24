@@ -168,6 +168,43 @@ describe("render", () => {
     expect(root.textContent).toContain("Switch On");
   });
 
+  it("keeps the ⋯ dropdown closed by default", () => {
+    const root = mount({
+      route: "sim",
+      currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
+      canvas: "playing",
+    });
+    expect(root.querySelector(".menu-pop")).toBeNull();
+    expect(root.querySelector('[aria-haspopup="menu"]')?.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
+
+  it("opens the ⋯ dropdown with the actions for the current state", () => {
+    const root = mount({
+      route: "sim",
+      currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
+      canvas: "playing",
+      menuOpen: true,
+    });
+    const pop = root.querySelector(".menu-pop");
+    expect(pop).not.toBeNull();
+    const labels = [...(pop?.querySelectorAll(".menu-item") ?? [])].map((b) => b.textContent);
+    expect(labels).toEqual(["Pause", "Home", "Shake", "Screenshot", "Switch Off"]);
+    expect(pop?.querySelector(".menu-item-danger")?.textContent).toBe("Switch Off");
+  });
+
+  it("offers Switch On in the ⋯ dropdown for a shut-down simulator", () => {
+    const root = mount({
+      route: "sim",
+      currentSim: { udid: "u1", name: "iPhone 17", state: "Shutdown", os_version: "iOS 18.4" },
+      canvas: "off",
+      menuOpen: true,
+    });
+    const labels = [...root.querySelectorAll(".menu-pop .menu-item")].map((b) => b.textContent);
+    expect(labels).toEqual(["Switch On"]);
+  });
+
   it("hides the toolbar while connecting", () => {
     const root = mount({
       route: "sim",

@@ -46,6 +46,8 @@ export interface State {
   /** Optimistic boot deadlines by udid (epoch ms) — the fake-boot window. */
   booting: Record<string, number>;
   screenshotBusy: boolean;
+  /** Whether the ⋯ action menu is open on the Simulator screen. */
+  menuOpen: boolean;
 
   /** Light/dark preference; `auto` follows the OS. Applied to <html data-theme>. */
   themePref: ThemePref;
@@ -72,6 +74,7 @@ export function initialState(): State {
     canvas: "connecting",
     booting: {},
     screenshotBusy: false,
+    menuOpen: false,
     themePref: "auto",
     toast: null,
   };

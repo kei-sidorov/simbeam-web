@@ -24,6 +24,8 @@ export interface Intents {
   bootSim(sim: SimInfo): void;
   shutdownSim(sim: SimInfo): void;
   toggleShutdownSims(): void;
+  toggleMenu(): void;
+  closeMenu(): void;
   togglePause(): void;
   home(): void;
   shake(): void;
@@ -401,7 +403,7 @@ export class Controller implements Intents {
     // Leaving a simulator stops its stream but keeps the Mac session alive.
     this.send?.({ type: "detach" });
     this.video.srcObject = null;
-    this.store.set({ route: "list", currentSim: null, canvas: "connecting" });
+    this.store.set({ route: "list", currentSim: null, canvas: "connecting", menuOpen: false });
   }
 
   openSim(sim: SimInfo): void {
@@ -430,6 +432,14 @@ export class Controller implements Intents {
 
   toggleShutdownSims(): void {
     this.store.set({ showShutdownSims: !this.store.get().showShutdownSims });
+  }
+
+  toggleMenu(): void {
+    this.store.set({ menuOpen: !this.store.get().menuOpen });
+  }
+
+  closeMenu(): void {
+    if (this.store.get().menuOpen) this.store.set({ menuOpen: false });
   }
 
   private startFakeBoot(udid: string): void {

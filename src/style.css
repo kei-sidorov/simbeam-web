@@ -261,6 +261,66 @@ button {
   flex: none;
 }
 
+/* ---- ⋯ action menu (dropdown) ---- */
+
+.menu-wrap {
+  position: relative;
+  flex: none;
+}
+
+/* Full-screen catcher: one tap anywhere outside dismisses the menu. */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 21;
+  min-width: 168px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px var(--shadow-1), 0 12px 32px var(--shadow-2);
+  animation: menu-in 0.12s ease;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.12s ease;
+}
+
+.menu-item:hover {
+  background: var(--hover-row);
+}
+
+.menu-item-danger {
+  color: var(--red);
+}
+
 /* ---- sections & rows ---- */
 
 .content {

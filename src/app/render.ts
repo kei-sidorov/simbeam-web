@@ -365,7 +365,7 @@ function simScreen(st: State, intents: Intents, video: HTMLVideoElement): HTMLEl
       h("div", { class: "title" }, sim?.name ?? "Simulator"),
       subChildren.length ? h("div", { class: "subtitle" }, ...subChildren) : false,
     ),
-    h("button", { class: "btn-ghost", onclick: () => menu(st, intents) }, "⋯"),
+    menuButton(st, intents),
   );
 
   video.className = kind === "legacy" ? "legacy" : "";
@@ -444,31 +444,75 @@ function iconButton(icon: SVGElement, label: string, onClick: () => void): HTMLE
   );
 }
 
-/** The three-dots menu — the surface that always carries every action. */
-function menu(st: State, intents: Intents): void {
+/** The set of actions the ⋯ menu carries for the current state. */
+type MenuItem = { label: string; run: () => void; danger?: boolean };
+
+function menuItems(st: State, intents: Intents): MenuItem[] {
   const sim = st.currentSim;
-  if (!sim) return;
+  if (!sim) return [];
   const live = st.canvas === "playing" || st.canvas === "paused";
-  const options: [string, () => void][] = [];
-  if (live) options.push([st.canvas === "playing" ? "Pause" : "Play", () => intents.togglePause()]);
+  const items: MenuItem[] = [];
+  if (live) {
+    items.push({
+      label: st.canvas === "playing" ? "Pause" : "Play",
+      run: () => intents.togglePause(),
+    });
+  }
   if (st.canvas === "playing") {
-    options.push(["Home", () => intents.home()]);
-    options.push(["Shake", () => intents.shake()]);
-    options.push(["Screenshot", () => intents.screenshot()]);
+    items.push({ label: "Home", run: () => intents.home() });
+    items.push({ label: "Shake", run: () => intents.shake() });
+    items.push({ label: "Screenshot", run: () => intents.screenshot() });
   }
   const isBooted = sim.state === "Booted" || st.canvas === "playing";
-  options.push(
+  items.push(
     isBooted
-      ? ["Switch Off", () => intents.shutdownSim(sim)]
-      : ["Switch On", () => intents.bootSim(sim)],
+      ? { label: "Switch Off", run: () => intents.shutdownSim(sim), danger: true }
+      : { label: "Switch On", run: () => intents.bootSim(sim) },
   );
+  return items;
+}
 
-  const choice = prompt(
-    `${sim.name}\n\n${options.map(([label], i) => `${i + 1}. ${label}`).join("\n")}\n\nType a number:`,
+/**
+ * The ⋯ button plus its dropdown. The menu is the surface that always carries
+ * every action; open/close state lives in the store so it survives re-renders.
+ */
+function menuButton(st: State, intents: Intents): HTMLElement {
+  const items = menuItems(st, intents);
+  return h(
+    "div",
+    { class: "menu-wrap" },
+    h(
+      "button",
+      {
+        class: "btn-ghost",
+        "aria-haspopup": "menu",
+        "aria-expanded": st.menuOpen ? "true" : "false",
+        title: "Actions",
+        onclick: stop(() => intents.toggleMenu()),
+      },
+      "⋯",
+    ),
+    st.menuOpen && h("div", { class: "menu-backdrop", onclick: () => intents.closeMenu() }),
+    st.menuOpen &&
+      h(
+        "div",
+        { class: "menu-pop", role: "menu" },
+        ...items.map((it) =>
+          h(
+            "button",
+            {
+              class: it.danger ? "menu-item menu-item-danger" : "menu-item",
+              role: "menuitem",
+              onclick: () => {
+                intents.closeMenu();
+                it.run();
+              },
+            },
+            it.label,
+          ),
+        ),
+      ),
   );
-  if (!choice) return;
-  const idx = Number.parseInt(choice, 10) - 1;
-  options[idx]?.[1]();
 }
 
 // ---- input wiring (tap / swipe / key) ----
