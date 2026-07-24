@@ -6,6 +6,7 @@ import type { ControlReply, SimInfo, SimsPayload } from "../protocol/messages";
 import { PresenceWatcher } from "../protocol/presence";
 import { Session, type SessionTarget } from "../protocol/session";
 import { FAKE_BOOT_MS } from "./phases";
+import { ShakeDetector } from "./shake";
 import { type SavedMac, loadMacs, removeMac, saveMac } from "./storage";
 import type { State, Store } from "./store";
 import { applyTheme, loadThemePref, nextThemePref, saveThemePref, watchSystemTheme } from "./theme";
@@ -51,6 +52,10 @@ export class Controller implements Intents {
   private reconnectDelay = 1000;
   private bootTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Physical shake → shake action; armed lazily by the first Shake tap. */
+  private shakeDetector: ShakeDetector | null = null;
+  /** True once we've asked for motion access — don't nag on later taps. */
+  private shakeGestureTried = false;
 
   /** Persistent video element, re-parented across renders to keep the stream. */
   readonly video: HTMLVideoElement;
@@ -492,7 +497,29 @@ export class Controller implements Intents {
   }
 
   shake(): void {
+    this.sendShake();
+    // The first tap doubles as the user gesture iOS needs to grant motion
+    // access; once granted, a physical shake fires the same action.
+    void this.armShakeGesture();
+  }
+
+  private sendShake(): void {
     this.send?.({ type: "shake" });
+  }
+
+  /** Request motion permission (once) and start listening for a real shake. */
+  private async armShakeGesture(): Promise<void> {
+    if (this.shakeDetector?.active || this.shakeGestureTried) return;
+    this.shakeGestureTried = true;
+    this.shakeDetector = new ShakeDetector(() => {
+      // Only forward a physical shake while a live simulator is on screen.
+      const st = this.store.get();
+      if (st.route === "sim" && (st.canvas === "playing" || st.canvas === "paused")) {
+        this.sendShake();
+      }
+    });
+    const result = await this.shakeDetector.enable();
+    if (result === "granted") this.toast("Shake to shake — on");
   }
 
   screenshot(): void {
