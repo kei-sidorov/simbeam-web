@@ -2,7 +2,7 @@
 
 Web client for [simbeam](https://github.com/kei-sidorov/simbeam) — stream an iOS
 Simulator (or a demo device) from a Mac and control it from the browser: live H.264
-video over WebRTC, taps, swipes and keyboard.
+video over WebRTC, touch and keyboard.
 
 **Status: building.** The product client lives in `src/` — a minimalist,
 monospace web app that pairs from the address bar and streams a simulator.

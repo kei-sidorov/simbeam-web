@@ -282,6 +282,7 @@ The client sends:
 | shutdown| `{"type":"shutdown","udid":"<udid>"}` | power off a simulator |
 | attach  | `{"type":"attach","udid":"<udid>","scale":<0.25–1.0>,"bitrate":<bits/s>}` | start streaming this simulator's screen; `scale`/`bitrate` optional, see [Video quality](#video-quality) |
 | detach  | `{"type":"detach"}` | stop streaming |
+| touch   | `{"type":"touch","action":"down"\|"move"\|"up","x":0.5,"y":0.5}` | a raw touch event at normalized [0,1] coordinates |
 | tap     | `{"type":"tap","x":0.5,"y":0.5}` | tap at normalized [0,1] coordinates |
 | swipe   | `{"type":"swipe","x1":..,"y1":..,"x2":..,"y2":..,"duration":<sec>}` | drag |
 | home    | `{"type":"home"}` | press the Home button |
@@ -291,6 +292,16 @@ The client sends:
 Coordinates are **normalized 0–1** relative to the displayed frame; the daemon scales them to the
 simulator's logical points. (Keyboard input sends physical HID key codes — the actual character is
 chosen by the keyboard layout active *inside the simulator*.)
+
+`touch` is the honest input path: the client forwards pointer events as they happen, so the device
+sees a real finger (long press, flick, inertial scroll all follow from it) instead of a synthesized
+gesture. Because control is lossy, the client **thins `move`** — coalesced to roughly one per frame
+— and sends `up` **redundantly**: a lost `move` is invisible, a lost `up` leaves a finger stuck.
+On a slow uplink (mobile) `move` additionally yields to backpressure: while bytes are still queued
+on the channel, positions are dropped rather than buffered, since they would arrive stale anyway.
+Coordinates carry four decimals — ~0.1 device point, and a third shorter on the wire.
+`tap` and `swipe` remain for one-shot synthesized gestures; simbeam-web uses `touch` for pointer
+input (see `src/protocol/touch.ts`).
 
 The daemon replies on the same channel:
 

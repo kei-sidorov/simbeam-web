@@ -130,6 +130,14 @@ export class Session {
     }
   }
 
+  /**
+   * Bytes queued on `control` but not yet handed to the network. Non-zero means
+   * the uplink is the bottleneck — callers streaming input should back off.
+   */
+  controlBacklog(): number {
+    return this.control?.readyState === "open" ? this.control.bufferedAmount : 0;
+  }
+
   sendBulk(obj: unknown): void {
     if (this.bulk && this.bulk.readyState === "open") {
       this.bulk.send(JSON.stringify(obj));

@@ -515,9 +515,13 @@ function menuButton(st: State, intents: Intents): HTMLElement {
   );
 }
 
-// ---- input wiring (tap / swipe / key) ----
+// ---- input wiring (touch / key) ----
+//
+// Pointer events go to the daemon as-is: down / move / up. No gesture
+// recognition here — the device sees the real finger, so a long press, a
+// flick and a slow scroll all work out of the box. Thinning lives in
+// protocol/touch.ts (via the controller), not in this layer.
 
-const SWIPE_THRESHOLD_PX = 6;
 let inputWired: WeakSet<HTMLVideoElement> | null = null;
 
 function wireInput(video: HTMLVideoElement, intents: Intents): void {
@@ -525,9 +529,9 @@ function wireInput(video: HTMLVideoElement, intents: Intents): void {
   if (inputWired.has(video)) return;
   inputWired.add(video);
 
-  let drag: { x: number; y: number; cx: number; cy: number; t: number } | null = null;
+  let active: number | null = null;
 
-  const norm = (e: PointerEvent) => {
+  const norm = (e: { clientX: number; clientY: number }) => {
     const r = video.getBoundingClientRect();
     return {
       x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
@@ -536,26 +540,27 @@ function wireInput(video: HTMLVideoElement, intents: Intents): void {
   };
 
   video.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || active !== null) return;
+    active = e.pointerId;
     const c = norm(e);
-    drag = { x: c.x, y: c.y, cx: e.clientX, cy: e.clientY, t: Date.now() };
     video.setPointerCapture(e.pointerId);
+    intents.touchDown(c.x, c.y);
+  });
+  video.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== active) return;
+    const c = norm(e);
+    intents.touchMove(c.x, c.y);
   });
   video.addEventListener("pointerup", (e) => {
-    if (e.button !== 0 || !drag) return;
-    const dx = e.clientX - drag.cx;
-    const dy = e.clientY - drag.cy;
-    if (Math.hypot(dx, dy) < SWIPE_THRESHOLD_PX) {
-      intents.sendTap(drag.x, drag.y);
-    } else {
-      const end = norm(e);
-      const duration = Math.max(0.05, (Date.now() - drag.t) / 1000);
-      intents.sendSwipe(drag.x, drag.y, end.x, end.y, duration);
-    }
-    drag = null;
+    if (e.pointerId !== active) return;
+    active = null;
+    const c = norm(e);
+    intents.touchUp(c.x, c.y);
   });
-  video.addEventListener("pointercancel", () => {
-    drag = null;
+  video.addEventListener("pointercancel", (e) => {
+    if (e.pointerId !== active) return;
+    active = null;
+    intents.touchCancel();
   });
 }
 

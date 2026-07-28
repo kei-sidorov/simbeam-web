@@ -39,6 +39,18 @@ export interface PresenceMsg {
   states: Record<string, boolean>;
 }
 
+// ---- control channel (client commands) ----
+
+export type TouchAction = "down" | "move" | "up";
+
+/** A raw touch event; x/y are normalized [0,1] against the displayed frame. */
+export interface TouchMsg {
+  type: "touch";
+  action: TouchAction;
+  x: number;
+  y: number;
+}
+
 // ---- control channel (daemon replies) ----
 
 export interface SimInfo {

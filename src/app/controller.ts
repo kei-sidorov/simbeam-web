@@ -5,6 +5,7 @@ import type { Identity, KV } from "../protocol/identity";
 import type { ControlReply, SimInfo, SimsPayload } from "../protocol/messages";
 import { PresenceWatcher } from "../protocol/presence";
 import { Session, type SessionTarget } from "../protocol/session";
+import { TouchStream } from "../protocol/touch";
 import { FAKE_BOOT_MS } from "./phases";
 import { ShakeDetector } from "./shake";
 import { type SavedMac, loadMacs, removeMac, saveMac } from "./storage";
@@ -31,8 +32,10 @@ export interface Intents {
   home(): void;
   shake(): void;
   screenshot(): void;
-  sendTap(x: number, y: number): void;
-  sendSwipe(x1: number, y1: number, x2: number, y2: number, duration: number): void;
+  touchDown(x: number, y: number): void;
+  touchMove(x: number, y: number): void;
+  touchUp(x: number, y: number): void;
+  touchCancel(): void;
   sendKey(key: string): void;
 }
 
@@ -56,6 +59,10 @@ export class Controller implements Intents {
   private shakeDetector: ShakeDetector | null = null;
   /** True once we've asked for motion access — don't nag on later taps. */
   private shakeGestureTried = false;
+  /** Pointer stream → `touch` wire messages (thinned moves, redundant `up`). */
+  private touch = new TouchStream((msg) => this.send?.(msg), {
+    backlog: () => this.session?.controlBacklog() ?? 0,
+  });
 
   /** Persistent video element, re-parented across renders to keep the stream. */
   readonly video: HTMLVideoElement;
@@ -377,6 +384,8 @@ export class Controller implements Intents {
       this.reconnectTimer = null;
     }
     this.stopSimListRetry();
+    // Release a finger held mid-drag while the channel is still open.
+    this.touch.cancel();
     this.session?.close();
     this.session = null;
     this.send = null;
@@ -484,6 +493,7 @@ export class Controller implements Intents {
   togglePause(): void {
     const st = this.store.get();
     if (st.canvas === "playing") {
+      this.touch.cancel();
       this.send?.({ type: "detach" });
       this.store.set({ canvas: "paused" });
     } else if (st.canvas === "paused" && st.currentSim) {
@@ -528,14 +538,20 @@ export class Controller implements Intents {
     this.session?.sendBulk({ type: "screenshot" });
   }
 
-  sendTap(x: number, y: number): void {
-    if (this.store.get().canvas === "playing") this.send?.({ type: "tap", x, y });
+  touchDown(x: number, y: number): void {
+    if (this.store.get().canvas === "playing") this.touch.down(x, y);
   }
 
-  sendSwipe(x1: number, y1: number, x2: number, y2: number, duration: number): void {
-    if (this.store.get().canvas === "playing") {
-      this.send?.({ type: "swipe", x1, y1, x2, y2, duration });
-    }
+  touchMove(x: number, y: number): void {
+    this.touch.move(x, y);
+  }
+
+  touchUp(x: number, y: number): void {
+    this.touch.up(x, y);
+  }
+
+  touchCancel(): void {
+    this.touch.cancel();
   }
 
   sendKey(key: string): void {
