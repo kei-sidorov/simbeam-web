@@ -1,5 +1,6 @@
 import "./style.css";
 import { Controller } from "./app/controller";
+import { sessionLog } from "./app/log";
 import { render } from "./app/render";
 import { localKV } from "./app/storage";
 import { Store, initialState } from "./app/store";
@@ -7,7 +8,18 @@ import { loadOrCreateIdentity } from "./protocol/identity";
 
 const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta"]);
 
+/** Anything that would otherwise only exist in a devtools console we can't reach. */
+function captureFailures(): void {
+  window.addEventListener("error", (e) => {
+    sessionLog.error(`uncaught: ${e.message} @ ${e.filename}:${e.lineno}`);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    sessionLog.error(`unhandled rejection: ${String(e.reason)}`);
+  });
+}
+
 async function main(): Promise<void> {
+  captureFailures();
   const root = document.getElementById("app");
   if (!root) throw new Error("#app not found");
 

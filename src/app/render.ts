@@ -80,7 +80,7 @@ function extLink(href: string, cls: string, text: string): HTMLElement {
   return h("a", { class: cls, href, target: "_blank", rel: "noopener noreferrer" }, text);
 }
 
-/** Page footer: brand · author · theme toggle. */
+/** Page footer: brand · author · logs · theme toggle. */
 function shellFooter(st: State, intents: Intents): HTMLElement {
   return h(
     "footer",
@@ -89,7 +89,73 @@ function shellFooter(st: State, intents: Intents): HTMLElement {
     h("span", { class: "footer-sep" }, "·"),
     extLink(AUTHOR_URL, "footer-link", "Kei Sidorov"),
     h("span", { class: "footer-sep" }, "·"),
+    h(
+      "button",
+      { class: "footer-link footer-btn", onclick: () => intents.openLogs() },
+      "Send logs",
+    ),
+    h("span", { class: "footer-sep" }, "·"),
     themeToggle(st, intents),
+  );
+}
+
+// ---- session log sheet ----
+
+/**
+ * The log as text, with a share button when the platform has one. Sharing a
+ * file is the only comfortable route off an iPhone; the textarea is always
+ * there so the user can see what they are about to send — and copy it if the
+ * share sheet is not available.
+ */
+function logSheet(st: State, intents: Intents): HTMLElement {
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  return h(
+    "div",
+    { class: "sheet-backdrop", onclick: () => intents.closeLogs() },
+    h(
+      "div",
+      { class: "sheet", role: "dialog", "aria-label": "Session log", onclick: stop(() => {}) },
+      h(
+        "div",
+        { class: "sheet-head" },
+        h("div", { class: "title" }, "Session log"),
+        h(
+          "button",
+          {
+            class: "btn-ghost",
+            title: "Close",
+            "aria-label": "Close",
+            onclick: () => intents.closeLogs(),
+          },
+          "✕",
+        ),
+      ),
+      h(
+        "p",
+        { class: "sheet-note" },
+        "Everything since this page was opened. Reloading starts a new log.",
+      ),
+      // Tapping the log selects all of it: the copy fallback has to survive a
+      // re-render (a toast expiring rebuilds the sheet and drops any selection),
+      // so the user needs a way to re-select that is theirs to trigger.
+      h(
+        "textarea",
+        {
+          class: "log-text",
+          readonly: "",
+          spellcheck: "false",
+          onclick: (e: Event) => (e.currentTarget as HTMLTextAreaElement).select(),
+        },
+        st.logsText,
+      ),
+      h(
+        "div",
+        { class: "sheet-actions" },
+        canShare &&
+          h("button", { class: "btn-primary", onclick: () => intents.shareLogs() }, "Share"),
+        h("button", { class: "btn-ghost btn-wide", onclick: () => intents.copyLogs() }, "Copy"),
+      ),
+    ),
   );
 }
 
@@ -602,6 +668,7 @@ export function render(
         st.toast.text,
       ),
     shellFooter(st, intents),
+    st.logsOpen && logSheet(st, intents),
   );
 
   root.replaceChildren(shell);

@@ -194,6 +194,29 @@ describe("render", () => {
     expect(pop?.querySelector(".menu-item-danger")?.textContent).toBe("Switch Off");
   });
 
+  it("offers Send logs in the footer on every screen", () => {
+    for (const route of ["main", "list", "sim"] as const) {
+      const root = mount({ route });
+      const btn = [...root.querySelectorAll(".shell-footer button")].find(
+        (b) => b.textContent === "Send logs",
+      );
+      expect(btn, `missing on ${route}`).toBeDefined();
+    }
+  });
+
+  it("shows the session log in a textarea with a copy action", () => {
+    const root = mount({ logsOpen: true, logsText: "simbeam-web session log\n+0.001s  info  hi" });
+    const ta = root.querySelector<HTMLTextAreaElement>(".log-text");
+    expect(ta?.value).toContain("+0.001s  info  hi");
+    expect(ta?.hasAttribute("readonly")).toBe(true);
+    const labels = [...root.querySelectorAll(".sheet-actions button")].map((b) => b.textContent);
+    expect(labels).toContain("Copy");
+  });
+
+  it("keeps the log sheet closed by default", () => {
+    expect(mount({ route: "main" }).querySelector(".sheet")).toBeNull();
+  });
+
   it("keeps App Switcher out of the side capsule", () => {
     const root = mount({
       route: "sim",

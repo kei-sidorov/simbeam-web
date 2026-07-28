@@ -6,6 +6,7 @@ import type { ControlReply, SimInfo, SimsPayload } from "../protocol/messages";
 import { PresenceWatcher } from "../protocol/presence";
 import { Session, type SessionTarget } from "../protocol/session";
 import { TouchStream } from "../protocol/touch";
+import { type LogEnv, safeUrl, sessionLog } from "./log";
 import { FAKE_BOOT_MS } from "./phases";
 import { ShakeDetector } from "./shake";
 import { type SavedMac, loadMacs, removeMac, saveMac } from "./storage";
@@ -33,6 +34,10 @@ export interface Intents {
   appSwitcher(): void;
   shake(): void;
   screenshot(): void;
+  openLogs(): void;
+  closeLogs(): void;
+  copyLogs(): void;
+  shareLogs(): void;
   touchDown(x: number, y: number): void;
   touchMove(x: number, y: number): void;
   touchUp(x: number, y: number): void;
@@ -91,6 +96,9 @@ export class Controller implements Intents {
 
     const pairing = parsePairingFragment(location.hash);
     const macs = loadMacs(this.kv);
+    sessionLog.info(
+      `init: ${macs.length} paired mac(s)${pairing ? `, pairing fragment for ${short(pairing.daemon)}` : ""}`,
+    );
     this.store.set({ themePref, macs, pairing, route: pairing ? "pairing" : "main" });
     this.startPresence(macs);
   }
@@ -125,6 +133,9 @@ export class Controller implements Intents {
   // ---- toasts ----
 
   private toast(text: string, kind: "info" | "error" = "info"): void {
+    // Everything the user was told belongs in the log — that is what they will
+    // be describing when they report the problem.
+    sessionLog.add(kind === "error" ? "error" : "info", `toast: ${text}`);
     this.store.set({ toast: { text, kind } });
     if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => this.store.set({ toast: null }), 3200);
@@ -171,8 +182,10 @@ export class Controller implements Intents {
     this.intentionalClose = false;
     this.teardownSession();
     this.store.set({ transport: null }); // unknown until ICE settles
+    sessionLog.info(`dial ${short(target.daemon)}${opts.enrolling ? " (enrolling)" : ""}`);
     const session = new Session(target, this.identity, {
       onPhase: (phase) => {
+        sessionLog.info(`phase: ${phase}`);
         this.store.set({ phase });
         if (phase === "connected") this.reconnectDelay = 1000;
       },
@@ -191,7 +204,10 @@ export class Controller implements Intents {
         this.video.srcObject = stream;
       },
       onIceServers: () => {},
-      onTransport: (kind) => this.store.set({ transport: kind }),
+      onTransport: (kind) => {
+        sessionLog.info(`transport: ${kind}`);
+        this.store.set({ transport: kind });
+      },
       onPaired: () => this.onPaired(target),
       onAuthFail: () => {
         this.toast("Authentication failed — possible man-in-the-middle. Re-pair.", "error");
@@ -221,6 +237,7 @@ export class Controller implements Intents {
 
   private onControlReply(reply: ControlReply, enrolling: boolean): void {
     const st = this.store.get();
+    sessionLog.add(reply.type === "error" ? "error" : "info", `reply: ${describeReply(reply)}`);
     switch (reply.type) {
       case "hello": {
         if (st.connectedMac && (reply.name || reply.osVersion)) {
@@ -316,7 +333,9 @@ export class Controller implements Intents {
 
     if (res.kind === "sims") {
       this.stopSimListRetry();
-      this.handleSims(parseSims(res.bytes));
+      const sims = parseSims(res.bytes);
+      sessionLog.info(`sims: ${sims.length} (${res.bytes.length} bytes)`);
+      this.handleSims(sims);
     } else {
       this.store.set({ screenshotBusy: false });
       this.saveScreenshot(res.bytes);
@@ -359,6 +378,7 @@ export class Controller implements Intents {
   private onDrop(): void {
     if (this.intentionalClose) return;
     const st = this.store.get();
+    sessionLog.warn("connection dropped");
     this.store.set({ transport: null }); // path is unknown until we reconnect
     if (st.route === "list") this.store.set({ listReconnecting: true });
     if (st.route === "sim") this.store.set({ canvas: "disconnected" });
@@ -369,6 +389,7 @@ export class Controller implements Intents {
     if (this.reconnectTimer) return;
     const mac = this.store.get().connectedMac;
     if (!mac) return;
+    sessionLog.info(`reconnect in ${this.reconnectDelay}ms`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       const st = this.store.get();
@@ -423,6 +444,7 @@ export class Controller implements Intents {
 
   openSim(sim: SimInfo): void {
     const booted = sim.state === "Booted";
+    sessionLog.info(`open sim ${sim.name} (${sim.os_version}, ${sim.state})`);
     this.store.set({ route: "sim", currentSim: sim, canvas: booted ? "connecting" : "off" });
     if (booted) {
       this.send?.({ type: "attach", udid: sim.udid });
@@ -430,12 +452,14 @@ export class Controller implements Intents {
   }
 
   bootSim(sim: SimInfo): void {
+    sessionLog.info(`boot ${sim.name}`);
     this.send?.({ type: "boot", udid: sim.udid });
     this.startFakeBoot(sim.udid);
     if (this.store.get().currentSim?.udid === sim.udid) this.store.set({ canvas: "booting" });
   }
 
   shutdownSim(sim: SimInfo): void {
+    sessionLog.info(`shutdown ${sim.name}`);
     this.send?.({ type: "shutdown", udid: sim.udid });
     this.clearBootTimer(sim.udid);
     const st = this.store.get();
@@ -455,6 +479,68 @@ export class Controller implements Intents {
 
   closeMenu(): void {
     if (this.store.get().menuOpen) this.store.set({ menuOpen: false });
+  }
+
+  // ---- session log ----
+
+  /** Snapshot the log so it doesn't shift under the reader, and show the sheet. */
+  openLogs(): void {
+    this.store.set({
+      logsOpen: true,
+      logsText: sessionLog.format(this.logEnv(), new Date(sessionLog.startedAt).toISOString()),
+      menuOpen: false,
+    });
+  }
+
+  closeLogs(): void {
+    this.store.set({ logsOpen: false });
+  }
+
+  async copyLogs(): Promise<void> {
+    const text = this.store.get().logsText;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.toast("Log copied");
+    } catch {
+      // No clipboard permission (or no API): the log is still on screen, so
+      // select it and let the user copy with the system control. Toast first —
+      // it re-renders the sheet, which would throw away an earlier selection.
+      this.toast("Select the log and copy it by hand", "error");
+      selectLogTextarea();
+    }
+  }
+
+  /**
+   * Hand the log to the OS share sheet as a file — on iOS that is the only
+   * comfortable way out of the browser (a download lands in Files and has to
+   * be dug out again).
+   */
+  async shareLogs(): Promise<void> {
+    const text = this.store.get().logsText;
+    const stamp = new Date(sessionLog.startedAt).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const file = new File([text], `simbeam-${stamp}.txt`, { type: "text/plain" });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "simbeam session log" });
+      } else {
+        await navigator.share({ title: "simbeam session log", text });
+      }
+    } catch (err) {
+      // AbortError just means the user dismissed the sheet — not a failure.
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      sessionLog.warn(`share failed: ${String(err)}`);
+      void this.copyLogs();
+    }
+  }
+
+  private logEnv(): LogEnv {
+    return {
+      url: safeUrl(location.href),
+      signal: SIGNAL_URL,
+      userAgent: navigator.userAgent,
+      viewport: `${window.innerWidth}x${window.innerHeight} dpr ${window.devicePixelRatio}`,
+      identity: short(this.identity.pub),
+    };
   }
 
   private startFakeBoot(udid: string): void {
@@ -562,6 +648,35 @@ export class Controller implements Intents {
   sendKey(key: string): void {
     if (this.store.get().canvas === "playing") this.send?.({ type: "key", key });
   }
+}
+
+/** First bytes of a key or id — enough to tell sessions apart, short enough to read. */
+function short(id: string): string {
+  return `${id.slice(0, 8)}…`;
+}
+
+/** One-line rendering of a daemon reply for the log. */
+function describeReply(reply: ControlReply): string {
+  switch (reply.type) {
+    case "hello":
+      return `hello ${reply.name ?? "?"} (macOS ${reply.osVersion ?? "?"}, paired=${reply.paired ?? false})`;
+    case "booted":
+    case "shutdown":
+      return `${reply.type} ${short(reply.udid)}`;
+    case "attached":
+      return `attached ${reply.w}x${reply.h}`;
+    case "error":
+      return `error ${reply.code ?? ""} ${reply.msg ?? ""}`.trim();
+    default:
+      return reply.type;
+  }
+}
+
+/** Fallback for a blocked clipboard: select the text so the user can copy it. */
+function selectLogTextarea(): void {
+  const ta = document.querySelector<HTMLTextAreaElement>(".log-text");
+  ta?.focus();
+  ta?.select();
 }
 
 /** Returns a new sims array with one udid's state replaced. */

@@ -52,6 +52,13 @@ export interface State {
   /** Light/dark preference; `auto` follows the OS. Applied to <html data-theme>. */
   themePref: ThemePref;
 
+  /**
+   * The session log sheet. `logsText` is snapshotted when the sheet opens, so
+   * the text does not shift under the reader while events keep arriving.
+   */
+  logsOpen: boolean;
+  logsText: string;
+
   toast: Toast | null;
 }
 
@@ -76,6 +83,8 @@ export function initialState(): State {
     screenshotBusy: false,
     menuOpen: false,
     themePref: "auto",
+    logsOpen: false,
+    logsText: "",
     toast: null,
   };
 }

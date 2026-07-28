@@ -756,3 +756,99 @@ button {
   letter-spacing: 0.04em;
   margin: 16px 0 0;
 }
+
+/* ---- session log sheet ---- */
+
+/* The footer's "Send logs" is a button that has to read as the links beside it. */
+.footer-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.btn-wide {
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(20, 20, 26, 0.42);
+  animation: sheet-fade 0.12s ease;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 720px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px 18px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px var(--shadow-1), 0 18px 48px var(--shadow-2);
+  animation: sheet-in 0.14s ease;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sheet-note {
+  margin: 6px 0 12px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.log-text {
+  flex: 1;
+  min-height: 220px;
+  width: 100%;
+  resize: none;
+  padding: 12px;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  /* Wrap rather than scroll sideways: on a phone a long user-agent line would
+     otherwise hide the whole right half of the log. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+}
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@keyframes sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
