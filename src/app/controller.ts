@@ -76,8 +76,13 @@ export class Controller implements Intents {
   /** The sink the in-flight gesture started on; null between gestures. */
   private activeSink: PointerSink | null = null;
 
-  /** Persistent video element, re-parented across renders to keep the stream. */
+  /**
+   * Persistent video element, re-parented across renders to keep the stream.
+   * Safari pauses autoplay while the element is detached/hidden, so every
+   * render that puts it back on screen explicitly resumes playback below.
+   */
   readonly video: HTMLVideoElement;
+  private videoPlayPending: Promise<void> | null = null;
   /** True while a user-initiated teardown is in progress (suppresses reconnect). */
   private intentionalClose = false;
 
@@ -213,6 +218,10 @@ export class Controller implements Intents {
       onBulkFrame: (frame) => this.onBulkFrame(frame),
       onVideoTrack: (stream) => {
         this.video.srcObject = stream;
+        this.videoPlayPending = null;
+        const track = stream.getVideoTracks()[0];
+        sessionLog.info(`video: track${track ? ` (${track.readyState})` : ""}`);
+        this.videoMounted();
       },
       onIceServers: () => {},
       onTransport: (kind) => {
@@ -308,11 +317,17 @@ export class Controller implements Intents {
         break;
       }
       case "attached": {
-        if (st.route === "sim") this.store.set({ canvas: "playing" });
+        if (st.route === "sim") {
+          this.store.set({ canvas: "playing" });
+          this.videoMounted();
+        }
         break;
       }
       case "detached": {
-        if (st.route === "sim" && st.canvas === "playing") this.store.set({ canvas: "off" });
+        if (st.route === "sim" && st.canvas === "playing") {
+          this.store.set({ canvas: "off" });
+          this.pauseVideo();
+        }
         break;
       }
       case "error": {
@@ -447,6 +462,8 @@ export class Controller implements Intents {
     this.session?.close();
     this.session = null;
     this.send = null;
+    this.pauseVideo();
+    this.video.srcObject = null;
   }
 
   // ---- navigation ----
@@ -454,7 +471,6 @@ export class Controller implements Intents {
   goMain(): void {
     this.intentionalClose = true;
     this.teardownSession();
-    this.video.srcObject = null;
     for (const t of this.bootTimers.values()) clearTimeout(t);
     this.bootTimers.clear();
     this.store.set({
@@ -473,8 +489,10 @@ export class Controller implements Intents {
 
   goList(): void {
     // Leaving a simulator stops its stream but keeps the Mac session alive.
+    // Keep srcObject: a later attach resumes the same negotiated MediaStream,
+    // and RTCPeerConnection does not fire `track` again for that re-attach.
     this.send?.({ type: "detach" });
-    this.video.srcObject = null;
+    this.pauseVideo();
     this.store.set({ route: "list", currentSim: null, canvas: "connecting", menuOpen: false });
   }
 
@@ -502,7 +520,10 @@ export class Controller implements Intents {
     const booting = { ...st.booting };
     delete booting[sim.udid];
     this.store.set({ booting, sims: markState(st.sims, sim.udid, "Shutdown") });
-    if (st.currentSim?.udid === sim.udid) this.store.set({ canvas: "off" });
+    if (st.currentSim?.udid === sim.udid) {
+      this.store.set({ canvas: "off" });
+      this.pauseVideo();
+    }
   }
 
   toggleShutdownSims(): void {
@@ -618,6 +639,7 @@ export class Controller implements Intents {
     if (st.canvas === "playing") {
       this.touchCancel();
       this.send?.({ type: "detach" });
+      this.pauseVideo();
       this.store.set({ canvas: "paused" });
     } else if (st.canvas === "paused" && st.currentSim) {
       this.send?.({ type: "attach", udid: st.currentSim.udid });
@@ -697,11 +719,60 @@ export class Controller implements Intents {
   sendKey(key: string): void {
     if (this.store.get().canvas === "playing") this.send?.({ type: "key", key });
   }
+
+  /**
+   * Called after the persistent <video> has been inserted into the freshly
+   * rendered DOM. Safari suspends media elements while they are not visible,
+   * and moving this element between renders does not reliably restart
+   * `autoplay`; an explicit play() makes attachment and re-attachment
+   * deterministic.
+   */
+  videoMounted(): void {
+    const st = this.store.get();
+    if (st.route !== "sim" || st.canvas !== "playing" || !this.video.srcObject) return;
+    if (this.videoPlayPending) return;
+
+    try {
+      const wasPaused = this.video.paused;
+      const pending = this.video.play();
+      if (!pending) return;
+      this.videoPlayPending = pending;
+      void pending
+        .then(() => {
+          if (this.videoPlayPending === pending && wasPaused) {
+            sessionLog.info(
+              `video: playing ${this.video.videoWidth || "?"}x${this.video.videoHeight || "?"}`,
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          // pauseVideo() intentionally aborts a pending play while navigating
+          // away; only report a failure for the still-current attempt.
+          if (this.videoPlayPending === pending) {
+            sessionLog.warn(`video: play failed: ${describeError(err)}`);
+          }
+        })
+        .finally(() => {
+          if (this.videoPlayPending === pending) this.videoPlayPending = null;
+        });
+    } catch (err) {
+      sessionLog.warn(`video: play failed: ${describeError(err)}`);
+    }
+  }
+
+  private pauseVideo(): void {
+    this.videoPlayPending = null;
+    this.video.pause();
+  }
 }
 
 /** First bytes of a key or id — enough to tell sessions apart, short enough to read. */
 function short(id: string): string {
   return `${id.slice(0, 8)}…`;
+}
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
 }
 
 /** One-line rendering of a daemon reply for the log. */

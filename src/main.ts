@@ -32,9 +32,13 @@ async function main(): Promise<void> {
   const store = new Store(initialState());
   const controller = new Controller(store, identity, localKV);
 
-  store.subscribe((s) => render(root, s, controller, controller.video));
+  store.subscribe((s) => {
+    render(root, s, controller, controller.video);
+    controller.videoMounted();
+  });
   controller.init();
   render(root, store.get(), controller, controller.video);
+  controller.videoMounted();
 
   // Hardware key forwarding while a stream is playing.
   window.addEventListener("keydown", (e) => {
