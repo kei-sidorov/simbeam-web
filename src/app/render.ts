@@ -460,6 +460,7 @@ function menuItems(st: State, intents: Intents): MenuItem[] {
   }
   if (st.canvas === "playing") {
     items.push({ label: "Home", run: () => intents.home() });
+    items.push({ label: "App Switcher", run: () => intents.appSwitcher() });
     items.push({ label: "Shake", run: () => intents.shake() });
     items.push({ label: "Screenshot", run: () => intents.screenshot() });
   }

@@ -30,6 +30,7 @@ export interface Intents {
   closeMenu(): void;
   togglePause(): void;
   home(): void;
+  appSwitcher(): void;
   shake(): void;
   screenshot(): void;
   touchDown(x: number, y: number): void;
@@ -504,6 +505,10 @@ export class Controller implements Intents {
 
   home(): void {
     this.send?.({ type: "home" });
+  }
+
+  appSwitcher(): void {
+    this.send?.({ type: "app_switcher" });
   }
 
   shake(): void {

@@ -190,8 +190,17 @@ describe("render", () => {
     const pop = root.querySelector(".menu-pop");
     expect(pop).not.toBeNull();
     const labels = [...(pop?.querySelectorAll(".menu-item") ?? [])].map((b) => b.textContent);
-    expect(labels).toEqual(["Pause", "Home", "Shake", "Screenshot", "Switch Off"]);
+    expect(labels).toEqual(["Pause", "Home", "App Switcher", "Shake", "Screenshot", "Switch Off"]);
     expect(pop?.querySelector(".menu-item-danger")?.textContent).toBe("Switch Off");
+  });
+
+  it("keeps App Switcher out of the side capsule", () => {
+    const root = mount({
+      route: "sim",
+      currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
+      canvas: "playing",
+    });
+    expect(root.querySelector('.capsule-v [aria-label="App Switcher"]')).toBeNull();
   });
 
   it("offers Switch On in the ⋯ dropdown for a shut-down simulator", () => {

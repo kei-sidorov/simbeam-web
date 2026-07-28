@@ -286,6 +286,7 @@ The client sends:
 | tap     | `{"type":"tap","x":0.5,"y":0.5}` | tap at normalized [0,1] coordinates |
 | swipe   | `{"type":"swipe","x1":..,"y1":..,"x2":..,"y2":..,"duration":<sec>}` | drag |
 | home    | `{"type":"home"}` | press the Home button |
+| app_switcher | `{"type":"app_switcher"}` | open the app switcher |
 | key     | `{"type":"key","key":"<KeyboardEvent.key>"}` | a hardware key press |
 | shake   | `{"type":"shake"}` | shake the attached simulator (e.g. to trigger Shake to Undo); fire-and-forget, no reply |
 
