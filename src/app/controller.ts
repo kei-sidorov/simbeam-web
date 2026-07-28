@@ -75,8 +75,6 @@ export class Controller implements Intents {
   private swipe = new SwipeSynth((msg) => this.send?.(msg));
   /** The sink the in-flight gesture started on; null between gestures. */
   private activeSink: PointerSink | null = null;
-  /** Daemons already warned about missing capabilities — once each, not per reconnect. */
-  private capsWarned = new Set<string>();
 
   /** Persistent video element, re-parented across renders to keep the stream. */
   readonly video: HTMLVideoElement;
@@ -191,7 +189,7 @@ export class Controller implements Intents {
     this.teardownSession();
     // Both are unknown until this daemon answers: the path when ICE settles,
     // the capabilities when `hello` lands.
-    this.store.set({ transport: null, caps: [], daemonVersion: null });
+    this.store.set({ transport: null, caps: [], capsMissing: [], daemonVersion: null });
     sessionLog.info(`dial ${short(target.daemon)}${opts.enrolling ? " (enrolling)" : ""}`);
     const session = new Session(target, this.identity, {
       onPhase: (phase) => {
@@ -246,18 +244,20 @@ export class Controller implements Intents {
   private applyCaps(raw: unknown, version?: string): void {
     const caps = parseCaps(raw);
     const gap = capGap(raw);
-    this.store.set({ caps, daemonVersion: version ?? null });
+    this.store.set({ caps, capsMissing: gap.missing, daemonVersion: version ?? null });
     sessionLog.info(`hello: daemon ${version ?? "?"}, caps [${caps.join(", ")}]`);
 
     if (gap.unknown.length) {
       // The Mac speaks something this build has never heard of — we are behind.
+      // Nothing to tell the user: it is this page that needs reloading, and
+      // they cannot act on a capability we don't implement.
       sessionLog.warn(`caps this client does not know: ${gap.unknown.join(", ")}`);
     }
-    const daemon = this.store.get().connectedMac?.daemon ?? "";
-    if (!gap.missing.length || this.capsWarned.has(daemon)) return;
-    this.capsWarned.add(daemon);
-    sessionLog.warn(`caps the daemon lacks: ${gap.missing.join(", ")}`);
-    this.toast(`Update SimBeam on the Mac — no ${gap.missing.join(", ")}`, "error");
+    if (gap.missing.length) {
+      // The banner on the screen carries this to the user; the log keeps it
+      // for the report. A toast would be gone before the connection settles.
+      sessionLog.warn(`caps the daemon lacks: ${gap.missing.join(", ")}`);
+    }
   }
 
   private onPaired(target: SessionTarget): void {

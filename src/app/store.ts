@@ -41,6 +41,12 @@ export interface State {
    * to what daemons did before capabilities existed.
    */
   caps: Cap[];
+  /**
+   * Capabilities this client knows and the daemon does not offer. Set from
+   * `hello`, so an empty list also means "nothing asked yet" — which reads the
+   * same way: nothing to warn about until the daemon has answered.
+   */
+  capsMissing: Cap[];
   daemonVersion: string | null;
 
   sims: SimInfo[];
@@ -83,6 +89,7 @@ export function initialState(): State {
     phase: null,
     transport: null,
     caps: [],
+    capsMissing: [],
     daemonVersion: null,
     sims: [],
     listReconnecting: false,

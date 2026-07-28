@@ -1,4 +1,5 @@
 import { SIGNAL_URL } from "../config";
+import { CAP_LABEL } from "../protocol/caps";
 import { type SimInfo, deviceKind } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
 import type { TransportKind } from "../protocol/session";
@@ -48,6 +49,22 @@ function transportInline(kind: TransportKind | null): HTMLElement | false {
     { class: `net-inline net-${t.cls}`, title: t.title },
     h("span", { class: "net-dot" }),
     t.label,
+  );
+}
+
+/**
+ * Shown for the whole session when the Mac's daemon is behind this client.
+ * It is a standing condition, not an event: features are missing until the
+ * daemon is updated, so it stays on screen rather than passing as a toast.
+ */
+function capsBanner(st: State): HTMLElement | false {
+  if (!st.capsMissing.length) return false;
+  const lost = st.capsMissing.map((c) => CAP_LABEL[c]).join(", ");
+  const version = st.daemonVersion ? ` (${st.daemonVersion})` : "";
+  return h(
+    "div",
+    { class: "banner banner-warn" },
+    `SimBeam on the Mac${version} is out of date — no ${lost}. Update it to get them.`,
   );
 }
 
@@ -373,7 +390,14 @@ function listScreen(st: State, intents: Intents): HTMLElement {
     );
   }
 
-  return h("div", { class: "card" }, topbar, banner || h("span", {}), body);
+  return h(
+    "div",
+    { class: "card" },
+    topbar,
+    capsBanner(st) || h("span", {}),
+    banner || h("span", {}),
+    body,
+  );
 }
 
 /** The collapsed shut-down section header — click to reveal/hide the rows. */
@@ -498,7 +522,7 @@ function simScreen(st: State, intents: Intents, video: HTMLVideoElement): HTMLEl
     toolbar || h("span", {}),
   );
 
-  return h("div", { class: "card" }, topbar, stage);
+  return h("div", { class: "card" }, topbar, capsBanner(st) || h("span", {}), stage);
 }
 
 /** A round icon button with an accessible label (the icon replaces text). */

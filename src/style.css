@@ -852,3 +852,10 @@ button {
     transform: translateY(8px);
   }
 }
+
+/* Standing warning (an out-of-date daemon), as opposed to the neutral banner. */
+.banner-warn {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  text-align: left;
+}

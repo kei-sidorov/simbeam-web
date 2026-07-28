@@ -15,6 +15,16 @@ export const CAPS = ["touch", "app_switcher"] as const;
 
 export type Cap = (typeof CAPS)[number];
 
+/**
+ * What each capability is called when we have to tell the user it is missing.
+ * Typed against Cap, so adding a case to CAPS is a compile error until it has
+ * a name a person can read.
+ */
+export const CAP_LABEL: Record<Cap, string> = {
+  touch: "real touch input",
+  app_switcher: "App Switcher",
+};
+
 const KNOWN: ReadonlySet<string> = new Set<string>(CAPS);
 
 export function isCap(value: string): value is Cap {

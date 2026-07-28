@@ -228,6 +228,34 @@ describe("render", () => {
     expect(root.querySelector('.capsule-v [aria-label="App Switcher"]')).toBeNull();
   });
 
+  it("stands a warning on screen while the daemon is behind this client", () => {
+    for (const route of ["list", "sim"] as const) {
+      const root = mount({
+        route,
+        connectedMac: { daemon: "D1", name: "Mac" },
+        currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
+        canvas: "playing",
+        caps: [],
+        capsMissing: ["touch", "app_switcher"],
+        daemonVersion: "0.11.0",
+      });
+      const banner = root.querySelector(".banner-warn");
+      expect(banner?.textContent, `missing on ${route}`).toContain("0.11.0");
+      expect(banner?.textContent).toContain("real touch input");
+      expect(banner?.textContent).toContain("App Switcher");
+    }
+  });
+
+  it("says nothing about capabilities before the daemon has answered", () => {
+    const root = mount({
+      route: "list",
+      connectedMac: { daemon: "D1", name: "Mac" },
+      caps: [],
+      capsMissing: [],
+    });
+    expect(root.querySelector(".banner-warn")).toBeNull();
+  });
+
   it("hides App Switcher from a daemon that cannot do it", () => {
     const root = mount({
       route: "sim",
