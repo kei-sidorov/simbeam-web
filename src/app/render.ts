@@ -1,5 +1,4 @@
 import { SIGNAL_URL } from "../config";
-import { CAP_LABEL } from "../protocol/caps";
 import { type SimInfo, deviceKind } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
 import type { TransportKind } from "../protocol/session";
@@ -59,12 +58,14 @@ function transportInline(kind: TransportKind | null): HTMLElement | false {
  */
 function capsBanner(st: State): HTMLElement | false {
   if (!st.capsMissing.length) return false;
-  const lost = st.capsMissing.map((c) => CAP_LABEL[c]).join(", ");
   const version = st.daemonVersion ? ` (${st.daemonVersion})` : "";
+  // Deliberately unspecific: naming the capabilities would mean carrying a
+  // human label for every future one, and the user's move is the same either
+  // way — update the Mac. Which caps are missing is in the session log.
   return h(
     "div",
     { class: "banner banner-warn" },
-    `SimBeam on the Mac${version} is out of date — no ${lost}. Update it to get them.`,
+    `SimBeam on the Mac${version} is out of date — some actions are unavailable. Update it.`,
   );
 }
 

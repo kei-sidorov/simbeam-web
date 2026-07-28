@@ -241,8 +241,9 @@ describe("render", () => {
       });
       const banner = root.querySelector(".banner-warn");
       expect(banner?.textContent, `missing on ${route}`).toContain("0.11.0");
-      expect(banner?.textContent).toContain("real touch input");
-      expect(banner?.textContent).toContain("App Switcher");
+      expect(banner?.textContent).toContain("some actions are unavailable");
+      // No capability names: the banner must not need a label per new cap.
+      expect(banner?.textContent).not.toContain("touch");
     }
   });
 
