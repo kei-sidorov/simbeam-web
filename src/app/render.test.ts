@@ -185,6 +185,7 @@ describe("render", () => {
       route: "sim",
       currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
       canvas: "playing",
+      caps: ["touch", "app_switcher"],
       menuOpen: true,
     });
     const pop = root.querySelector(".menu-pop");
@@ -222,8 +223,22 @@ describe("render", () => {
       route: "sim",
       currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
       canvas: "playing",
+      caps: ["touch", "app_switcher"],
     });
     expect(root.querySelector('.capsule-v [aria-label="App Switcher"]')).toBeNull();
+  });
+
+  it("hides App Switcher from a daemon that cannot do it", () => {
+    const root = mount({
+      route: "sim",
+      currentSim: { udid: "u1", name: "iPhone 17", state: "Booted", os_version: "iOS 18.4" },
+      canvas: "playing",
+      caps: ["touch"],
+      menuOpen: true,
+    });
+    const labels = [...root.querySelectorAll(".menu-pop .menu-item")].map((b) => b.textContent);
+    expect(labels).not.toContain("App Switcher");
+    expect(labels).toContain("Home");
   });
 
   it("offers Switch On in the ⋯ dropdown for a shut-down simulator", () => {

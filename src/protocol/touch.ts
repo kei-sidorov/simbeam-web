@@ -37,6 +37,18 @@ export const MOVE_BACKLOG_LIMIT = 128;
  */
 const COORD_DECIMALS = 4;
 
+/**
+ * What the UI feeds pointer events into. Two implementations: TouchStream for
+ * daemons with the `touch` capability, and SwipeSynth (protocol/swipe.ts) for
+ * the ones without it — the caller picks by capability, not by shape.
+ */
+export interface PointerSink {
+  down(x: number, y: number): void;
+  move(x: number, y: number): void;
+  up(x: number, y: number): void;
+  cancel(): void;
+}
+
 export interface TouchStreamOptions {
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => void;
@@ -50,7 +62,7 @@ function round(v: number): number {
   return Math.round(v * f) / f;
 }
 
-export class TouchStream {
+export class TouchStream implements PointerSink {
   private down_ = false;
   /** Last position we actually sent (for the distance filter). */
   private sentX = 0;

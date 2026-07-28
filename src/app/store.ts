@@ -1,3 +1,4 @@
+import type { Cap } from "../protocol/caps";
 import type { PairingParams } from "../protocol/enroll";
 import type { SimInfo } from "../protocol/messages";
 import type { PresenceMap } from "../protocol/presence";
@@ -34,6 +35,13 @@ export interface State {
   phase: SessionPhase | null;
   /** How the current session connected (LAN / P2P / relay); null until known. */
   transport: TransportKind | null;
+  /**
+   * What the connected daemon says it supports. Empty until its `hello` lands
+   * — and empty is the safe reading: every feature gated on a cap falls back
+   * to what daemons did before capabilities existed.
+   */
+  caps: Cap[];
+  daemonVersion: string | null;
 
   sims: SimInfo[];
   listReconnecting: boolean;
@@ -74,6 +82,8 @@ export function initialState(): State {
     dialingDaemon: null,
     phase: null,
     transport: null,
+    caps: [],
+    daemonVersion: null,
     sims: [],
     listReconnecting: false,
     showShutdownSims: false,

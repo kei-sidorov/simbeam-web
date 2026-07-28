@@ -1,11 +1,13 @@
 import { SIGNAL_URL } from "../config";
 import { BulkReceiver } from "../protocol/bulk";
+import { type Cap, capGap, parseCaps } from "../protocol/caps";
 import { parsePairingFragment } from "../protocol/enroll";
 import type { Identity, KV } from "../protocol/identity";
 import type { ControlReply, SimInfo, SimsPayload } from "../protocol/messages";
 import { PresenceWatcher } from "../protocol/presence";
 import { Session, type SessionTarget } from "../protocol/session";
-import { TouchStream } from "../protocol/touch";
+import { SwipeSynth } from "../protocol/swipe";
+import { type PointerSink, TouchStream } from "../protocol/touch";
 import { type LogEnv, safeUrl, sessionLog } from "./log";
 import { FAKE_BOOT_MS } from "./phases";
 import { ShakeDetector } from "./shake";
@@ -69,6 +71,12 @@ export class Controller implements Intents {
   private touch = new TouchStream((msg) => this.send?.(msg), {
     backlog: () => this.session?.controlBacklog() ?? 0,
   });
+  /** The pre-`touch` path, for daemons without the capability. */
+  private swipe = new SwipeSynth((msg) => this.send?.(msg));
+  /** The sink the in-flight gesture started on; null between gestures. */
+  private activeSink: PointerSink | null = null;
+  /** Daemons already warned about missing capabilities — once each, not per reconnect. */
+  private capsWarned = new Set<string>();
 
   /** Persistent video element, re-parented across renders to keep the stream. */
   readonly video: HTMLVideoElement;
@@ -181,7 +189,9 @@ export class Controller implements Intents {
   private dial(target: SessionTarget, opts: { enrolling: boolean }): void {
     this.intentionalClose = false;
     this.teardownSession();
-    this.store.set({ transport: null }); // unknown until ICE settles
+    // Both are unknown until this daemon answers: the path when ICE settles,
+    // the capabilities when `hello` lands.
+    this.store.set({ transport: null, caps: [], daemonVersion: null });
     sessionLog.info(`dial ${short(target.daemon)}${opts.enrolling ? " (enrolling)" : ""}`);
     const session = new Session(target, this.identity, {
       onPhase: (phase) => {
@@ -189,8 +199,11 @@ export class Controller implements Intents {
         this.store.set({ phase });
         if (phase === "connected") this.reconnectDelay = 1000;
       },
+      // Greet first: the daemon's `hello` carries the capabilities every
+      // later decision is made from, so ask for it before anything else.
       onControlOpen: (send) => {
         this.send = send;
+        send({ type: "hello" });
       },
       onControlReply: (reply) => this.onControlReply(reply, opts.enrolling),
       // `list`/`sims` live on the reliable bulk channel; ask once it opens.
@@ -225,6 +238,28 @@ export class Controller implements Intents {
     void session.start();
   }
 
+  /**
+   * Record what the daemon can do, and say something when the two sides have
+   * drifted apart. The gap is computed from the known-capability list, so a
+   * new entry in CAPS is all it takes for the warning to start firing.
+   */
+  private applyCaps(raw: unknown, version?: string): void {
+    const caps = parseCaps(raw);
+    const gap = capGap(raw);
+    this.store.set({ caps, daemonVersion: version ?? null });
+    sessionLog.info(`hello: daemon ${version ?? "?"}, caps [${caps.join(", ")}]`);
+
+    if (gap.unknown.length) {
+      // The Mac speaks something this build has never heard of — we are behind.
+      sessionLog.warn(`caps this client does not know: ${gap.unknown.join(", ")}`);
+    }
+    const daemon = this.store.get().connectedMac?.daemon ?? "";
+    if (!gap.missing.length || this.capsWarned.has(daemon)) return;
+    this.capsWarned.add(daemon);
+    sessionLog.warn(`caps the daemon lacks: ${gap.missing.join(", ")}`);
+    this.toast(`Update SimBeam on the Mac — no ${gap.missing.join(", ")}`, "error");
+  }
+
   private onPaired(target: SessionTarget): void {
     // Pin optimistically; `hello` (paired:true) is the true confirmation and
     // fills in the name/osVersion. We save now so a drop reconnects key-only.
@@ -240,6 +275,7 @@ export class Controller implements Intents {
     sessionLog.add(reply.type === "error" ? "error" : "info", `reply: ${describeReply(reply)}`);
     switch (reply.type) {
       case "hello": {
+        this.applyCaps(reply.caps, reply.version);
         if (st.connectedMac && (reply.name || reply.osVersion)) {
           const updated: SavedMac = {
             ...st.connectedMac,
@@ -407,7 +443,7 @@ export class Controller implements Intents {
     }
     this.stopSimListRetry();
     // Release a finger held mid-drag while the channel is still open.
-    this.touch.cancel();
+    this.touchCancel();
     this.session?.close();
     this.session = null;
     this.send = null;
@@ -580,7 +616,7 @@ export class Controller implements Intents {
   togglePause(): void {
     const st = this.store.get();
     if (st.canvas === "playing") {
-      this.touch.cancel();
+      this.touchCancel();
       this.send?.({ type: "detach" });
       this.store.set({ canvas: "paused" });
     } else if (st.canvas === "paused" && st.currentSim) {
@@ -594,6 +630,7 @@ export class Controller implements Intents {
   }
 
   appSwitcher(): void {
+    if (!this.store.get().caps.includes("app_switcher")) return;
     this.send?.({ type: "app_switcher" });
   }
 
@@ -629,20 +666,32 @@ export class Controller implements Intents {
     this.session?.sendBulk({ type: "screenshot" });
   }
 
+  /**
+   * Which input path this daemon gets. Chosen once per gesture at `down`, so a
+   * `hello` landing mid-drag cannot split one gesture across both paths.
+   */
+  private pointerSink(): PointerSink {
+    return this.store.get().caps.includes("touch") ? this.touch : this.swipe;
+  }
+
   touchDown(x: number, y: number): void {
-    if (this.store.get().canvas === "playing") this.touch.down(x, y);
+    if (this.store.get().canvas !== "playing") return;
+    this.activeSink = this.pointerSink();
+    this.activeSink.down(x, y);
   }
 
   touchMove(x: number, y: number): void {
-    this.touch.move(x, y);
+    this.activeSink?.move(x, y);
   }
 
   touchUp(x: number, y: number): void {
-    this.touch.up(x, y);
+    this.activeSink?.up(x, y);
+    this.activeSink = null;
   }
 
   touchCancel(): void {
-    this.touch.cancel();
+    this.activeSink?.cancel();
+    this.activeSink = null;
   }
 
   sendKey(key: string): void {

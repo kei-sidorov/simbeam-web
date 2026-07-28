@@ -60,11 +60,19 @@ export interface SimInfo {
   os_version: string;
 }
 
+/**
+ * The daemon's answer to the client's `{"type":"hello"}`. `caps` is absent on
+ * daemons that predate capability negotiation — treat that as none (see
+ * protocol/caps.ts).
+ */
 export interface HelloMsg {
   type: "hello";
   name?: string;
   osVersion?: string;
   paired?: boolean;
+  /** Daemon version, e.g. "0.12.0" — for the log and the "please update" hint. */
+  version?: string;
+  caps?: unknown;
 }
 
 /**

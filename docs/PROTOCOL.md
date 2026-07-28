@@ -301,14 +301,16 @@ gesture. Because control is lossy, the client **thins `move`** — coalesced to 
 On a slow uplink (mobile) `move` additionally yields to backpressure: while bytes are still queued
 on the channel, positions are dropped rather than buffered, since they would arrive stale anyway.
 Coordinates carry four decimals — ~0.1 device point, and a third shorter on the wire.
-`tap` and `swipe` remain for one-shot synthesized gestures; simbeam-web uses `touch` for pointer
-input (see `src/protocol/touch.ts`).
+`tap` and `swipe` remain for one-shot synthesized gestures, and stay the fallback: a client uses
+`touch` only when the daemon lists it in `caps` (see [hello](#the-live-session-control-and-video)),
+otherwise it recognises the gesture itself and sends `tap`/`swipe` as before. In simbeam-web that
+is `src/protocol/touch.ts` and `src/protocol/swipe.ts`, chosen in the controller.
 
 The daemon replies on the same channel:
 
 | Reply | Shape |
 |-------|-------|
-| hello    | `{"type":"hello","name":"<Mac name>","osVersion":"<macOS version>","paired":true}` |
+| hello    | `{"type":"hello","name":"<Mac name>","osVersion":"<macOS version>","paired":true,"version":"<daemon>","caps":["touch","app_switcher"]}` |
 | booted   | `{"type":"booted","udid":"<udid>"}` |
 | shutdown | `{"type":"shutdown","udid":"<udid>"}` (if it was the streaming sim, a `detached` is sent first) |
 | attached | `{"type":"attached","w":<px>,"h":<px>}` (the simulator's **native** screen size — see below) |
@@ -321,6 +323,13 @@ moment the client opens the `control` channel (before any command). It carries:
 - `name` — the Mac's display name (e.g. `"Kirill's MacBook Pro"`), for the UI subtitle.
 - `osVersion` — the macOS version (e.g. `"26.5"`). Note the field is **`osVersion`** (camelCase),
   *not* the `os_version` used inside a simulator's `sims` entry.
+- `version` — the daemon's own version (e.g. `"0.12.0"`), for logs and update hints.
+- `caps` — the capabilities this daemon supports (e.g. `["touch","app_switcher"]`). **Absent on
+  daemons that predate capability negotiation; treat that as `[]`.** A client sends
+  `{"type":"hello"}` itself when the control channel opens rather than waiting for the unsolicited
+  greeting, and gates every optional feature on this list — never on a version comparison. What is
+  in `caps` but unknown to the client means the *client* is old; what the client knows and `caps`
+  omits means the *daemon* is old (see `src/protocol/caps.ts`).
 - `paired: true` — an explicit **pin-acknowledgement**. Reaching the control channel is only
   possible past the key challenge, which an enrolling client clears only after the daemon has
   durably saved its key. So a `hello` is proof the pairing actually took (see
