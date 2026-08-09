@@ -14,14 +14,16 @@ describe("caps", () => {
     }
   });
 
+  // The expectations are derived from CAPS on purpose: adding a capability
+  // should not mean editing a fixture in three places.
   it("reports what the daemon is missing so we can ask for an update", () => {
-    expect(capGap(["touch"]).missing).toEqual(["app_switcher"]);
+    expect(capGap(["touch"]).missing).toEqual(CAPS.filter((c) => c !== "touch"));
     expect(capGap([]).missing).toEqual([...CAPS]);
     expect(capGap([...CAPS]).missing).toEqual([]);
   });
 
   it("reports capabilities we do not know — then this client is the old one", () => {
-    const gap = capGap(["touch", "app_switcher", "haptics"]);
+    const gap = capGap([...CAPS, "haptics"]);
     expect(gap.unknown).toEqual(["haptics"]);
     expect(gap.missing).toEqual([]);
   });
@@ -29,7 +31,7 @@ describe("caps", () => {
   it("survives junk inside the array", () => {
     const gap = capGap(["touch", 7, null]);
     expect(gap.unknown).toEqual([]);
-    expect(gap.missing).toEqual(["app_switcher"]);
+    expect(gap.missing).toEqual(CAPS.filter((c) => c !== "touch"));
     expect(parseCaps(["touch", 7, null])).toEqual(["touch"]);
   });
 });

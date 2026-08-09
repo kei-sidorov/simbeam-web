@@ -10,8 +10,15 @@
 // we know and the daemon does not means the Mac needs updating; a cap the
 // daemon reports and we do not means this web client is the old one.
 
-/** Every capability this client can make use of. Add a case, get the checks. */
-export const CAPS = ["touch", "app_switcher"] as const;
+/**
+ * Every capability this client can make use of. Add a case, get the checks.
+ *
+ * `trickle` is the odd one: nothing branches on it, because the ICE path is
+ * decided by the broker's verdict on `iceServers`, long before `hello` exists.
+ * It is listed only so a daemon that cannot trickle reads as behind — do not
+ * gate the candidate flow on it.
+ */
+export const CAPS = ["touch", "app_switcher", "trickle"] as const;
 
 export type Cap = (typeof CAPS)[number];
 
