@@ -7,7 +7,7 @@ import { h } from "./dom";
 import { cameraIcon, homeIcon, macIcon, shakeIcon, simIcon, themeIcon } from "./icons";
 import { PHASE_LABEL } from "./phases";
 import type { SavedMac } from "./storage";
-import type { CanvasState, State } from "./store";
+import type { Blocked, CanvasState, State } from "./store";
 
 type Presence = "online" | "offline" | "undefined";
 
@@ -172,6 +172,51 @@ function logSheet(st: State, intents: Intents): HTMLElement {
         canShare &&
           h("button", { class: "btn-primary", onclick: () => intents.shareLogs() }, "Share"),
         h("button", { class: "btn-ghost btn-wide", onclick: () => intents.copyLogs() }, "Copy"),
+      ),
+    ),
+  );
+}
+
+// ---- single-session gate ----
+
+const BLOCKED: Record<Blocked["code"], { title: string; go: string; back: string; note?: string }> =
+  {
+    busy: {
+      title: "Mac is in use",
+      go: "Take over",
+      back: "Not now",
+      // Worth saying: after a hard crash the broker's keepalive frees the slot
+      // on its own, so waiting half a minute is a real option here.
+      note: "If that device is gone, the Mac frees itself in about half a minute.",
+    },
+    taken_over: { title: "Session taken over", go: "Reconnect", back: "Close" },
+  };
+
+/**
+ * The one screen that must not resolve itself. Both codes end the session, and
+ * the only way on is a tap — never a timer (see Controller.onBlocked).
+ */
+function blockedSheet(b: Blocked, intents: Intents): HTMLElement {
+  const t = BLOCKED[b.code];
+  return h(
+    "div",
+    { class: "sheet-backdrop" },
+    h(
+      "div",
+      { class: "sheet", role: "dialog", "aria-label": t.title },
+      h("div", { class: "sheet-head" }, h("div", { class: "title" }, t.title)),
+      // The broker's own wording — it knows which client is holding the Mac.
+      h("p", { class: "sheet-note" }, b.msg),
+      t.note && h("p", { class: "sheet-note" }, t.note),
+      h(
+        "div",
+        { class: "sheet-actions" },
+        h("button", { class: "btn-ghost", onclick: () => intents.dismissBlocked() }, t.back),
+        h(
+          "button",
+          { class: "btn-primary", onclick: () => intents.retryBlocked(b.code === "busy") },
+          t.go,
+        ),
       ),
     ),
   );
@@ -697,6 +742,7 @@ export function render(
       ),
     shellFooter(st, intents),
     st.logsOpen && logSheet(st, intents),
+    st.blocked && blockedSheet(st.blocked, intents),
   );
 
   root.replaceChildren(shell);

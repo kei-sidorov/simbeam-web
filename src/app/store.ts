@@ -17,6 +17,17 @@ export interface Toast {
   kind: "info" | "error";
 }
 
+/**
+ * The broker's single-session gate: either this Mac is held by someone else
+ * (`busy`), or another device took our seat (`taken_over`). Both end the
+ * session and wait for the user — retrying on a timer is the displacement
+ * fight the gate exists to stop. `msg` is the broker's own wording.
+ */
+export interface Blocked {
+  code: "busy" | "taken_over";
+  msg: string;
+}
+
 export interface State {
   route: Route;
   /** Non-null while a pairing fragment is present in the URL. */
@@ -48,6 +59,8 @@ export interface State {
    */
   capsMissing: Cap[];
   daemonVersion: string | null;
+  /** Non-null while the single-session gate is blocking us; the user decides. */
+  blocked: Blocked | null;
 
   sims: SimInfo[];
   listReconnecting: boolean;
@@ -91,6 +104,7 @@ export function initialState(): State {
     caps: [],
     capsMissing: [],
     daemonVersion: null,
+    blocked: null,
     sims: [],
     listReconnecting: false,
     showShutdownSims: false,

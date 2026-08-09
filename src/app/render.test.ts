@@ -218,6 +218,30 @@ describe("render", () => {
     expect(mount({ route: "main" }).querySelector(".sheet")).toBeNull();
   });
 
+  it("offers a takeover when the Mac is busy, and a plain reconnect after eviction", () => {
+    const calls: boolean[] = [];
+    const spy = new Proxy(
+      { retryBlocked: (takeover: boolean) => void calls.push(takeover) },
+      { get: (t, k) => (k in t ? t[k as "retryBlocked"] : noop) },
+    ) as Intents;
+
+    const root = document.createElement("div");
+    const busy = { code: "busy" as const, msg: "another client is connected to this Mac" };
+    render(root, { ...initialState(), blocked: busy }, spy, document.createElement("video"));
+    expect(root.textContent).toContain(busy.msg);
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>(".sheet-actions button")];
+    expect(buttons.map((b) => b.textContent)).toEqual(["Not now", "Take over"]);
+    buttons[1]?.click();
+
+    const evicted = { code: "taken_over" as const, msg: "another device took over this Mac" };
+    render(root, { ...initialState(), blocked: evicted }, spy, document.createElement("video"));
+    const after = [...root.querySelectorAll<HTMLButtonElement>(".sheet-actions button")];
+    expect(after.map((b) => b.textContent)).toEqual(["Close", "Reconnect"]);
+    after[1]?.click();
+
+    expect(calls).toEqual([true, false]);
+  });
+
   it("keeps App Switcher out of the side capsule", () => {
     const root = mount({
       route: "sim",

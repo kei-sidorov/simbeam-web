@@ -12,7 +12,7 @@ import { type LogEnv, safeUrl, sessionLog } from "./log";
 import { FAKE_BOOT_MS } from "./phases";
 import { ShakeDetector } from "./shake";
 import { type SavedMac, loadMacs, removeMac, saveMac } from "./storage";
-import type { State, Store } from "./store";
+import type { Blocked, State, Store } from "./store";
 import { applyTheme, loadThemePref, nextThemePref, saveThemePref, watchSystemTheme } from "./theme";
 
 /** Intents the UI can trigger; the controller owns all connection logic. */
@@ -21,6 +21,9 @@ export interface Intents {
   cancelPairing(): void;
   dialMac(mac: SavedMac): void;
   cancelDial(): void;
+  /** Re-dial after a `busy`/`taken_over`; `takeover` evicts the sitting client. */
+  retryBlocked(takeover: boolean): void;
+  dismissBlocked(): void;
   unpairMac(mac: SavedMac): void;
   goMain(): void;
   goList(): void;
@@ -57,6 +60,9 @@ export class Controller implements Intents {
   private presence: PresenceWatcher | null = null;
   /** Reassembles chunked bulk replies (screenshot / sims); reset after each. */
   private bulkRx = new BulkReceiver();
+
+  /** The last dial, so a confirmed takeover can repeat it verbatim. */
+  private lastDial: { target: SessionTarget; enrolling: boolean } | null = null;
 
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private listRetryTimer: ReturnType<typeof setInterval> | null = null;
@@ -192,6 +198,7 @@ export class Controller implements Intents {
   private dial(target: SessionTarget, opts: { enrolling: boolean }): void {
     this.intentionalClose = false;
     this.teardownSession();
+    this.lastDial = { target, enrolling: opts.enrolling };
     // Both are unknown until this daemon answers: the path when ICE settles,
     // the capabilities when `hello` lands.
     this.store.set({ transport: null, caps: [], capsMissing: [], daemonVersion: null });
@@ -414,6 +421,10 @@ export class Controller implements Intents {
   }
 
   private onSignalError(msg: string, code: string | undefined, enrolling: boolean): void {
+    if (code === "busy" || code === "taken_over") {
+      this.onBlocked(code, msg, enrolling);
+      return;
+    }
     if (enrolling) {
       this.store.set({ pairingBusy: false, pairingError: msg });
       this.toast(`Pairing failed: ${msg}`, "error");
@@ -426,6 +437,51 @@ export class Controller implements Intents {
     }
     this.toast(msg, "error");
     this.store.set({ dialingDaemon: null });
+  }
+
+  /**
+   * The single-session gate said no. Stop here: an automatic retry is exactly
+   * the eviction fight the gate was added to end, so the session is torn down
+   * and the choice — take the Mac over, or leave it — goes to the user.
+   */
+  private onBlocked(code: Blocked["code"], msg: string, enrolling: boolean): void {
+    sessionLog.warn(`session ${code}: ${msg}`);
+    this.intentionalClose = true; // suppress the reconnect a trailing drop would start
+    this.teardownSession();
+    this.store.set({
+      blocked: { code, msg },
+      dialingDaemon: null,
+      pairingBusy: false,
+      pairingError: enrolling ? msg : null,
+    });
+  }
+
+  /**
+   * Repeat the refused dial. `busy` never reached the daemon, so a pairing
+   * secret sent with it is unspent — the same target is re-sent verbatim,
+   * plus `takeover` when the user chose to evict the other client.
+   */
+  retryBlocked(takeover: boolean): void {
+    const last = this.lastDial;
+    if (!last) return;
+    const st = this.store.get();
+    this.store.set({
+      blocked: null,
+      pairingBusy: last.enrolling,
+      pairingError: null,
+      // A dial from the Mac list shows its spinner; a re-dial under a live
+      // screen must not, or the arriving `sims` would yank the user back.
+      dialingDaemon: st.route === "main" ? last.target.daemon : null,
+      canvas: st.route === "sim" ? "connecting" : st.canvas,
+    });
+    this.dial({ ...last.target, takeover }, { enrolling: last.enrolling });
+  }
+
+  dismissBlocked(): void {
+    this.store.set({ blocked: null });
+    // Nothing behind a list/simulator screen is live any more. The pairing
+    // screen keeps its own error text and its Pair button, so leave it be.
+    if (this.store.get().route !== "pairing") this.goMain();
   }
 
   private onDrop(): void {

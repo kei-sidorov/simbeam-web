@@ -10,6 +10,11 @@ export interface SessionTarget {
   daemon: string;
   /** One-time pairing secret, only on first enrollment; null on reconnect. */
   pair: string | null;
+  /**
+   * Evict the client holding this Mac's single session. Only ever set after
+   * the user confirms a `busy` refusal — never on an automatic retry.
+   */
+  takeover?: boolean;
 }
 
 export type SessionPhase =
@@ -193,6 +198,7 @@ export class Session {
         pubkey: this.identity.pub,
         trickle: true,
       };
+      if (this.target.takeover) join.takeover = true;
       if (this.target.pair) {
         const nonce = bytesToB64(crypto.getRandomValues(new Uint8Array(16)));
         join.nonce = nonce;
@@ -280,6 +286,9 @@ export class Session {
           if (m.code === "offline" || (m.msg ?? "").includes("offline")) {
             this.cb.onDrop();
           } else {
+            // `busy` / `taken_over` come with the broker closing the socket;
+            // the caller ends the session there, so the trailing close is not
+            // read as a transient drop. See Controller.onBlocked.
             this.cb.onError(m.msg ?? "signalling error", m.code);
           }
           break;
