@@ -1,5 +1,5 @@
 > **Snapshot** of [`docs/HOW-IT-WORKS.md`](https://github.com/kei-sidorov/simbeam/blob/main/docs/HOW-IT-WORKS.md)
-> from the simbeam repo at commit `5925876` (2026-07-17). The canonical version lives there —
+> from the simbeam repo at commit `240de68` (2026-08-09). The canonical version lives there —
 > refresh this copy whenever the protocol changes.
 
 # How simbeam works
@@ -138,14 +138,21 @@ https://<client-app>/#signal=<wss-broker-url>&daemon=<daemonID>&pair=<S>
 
 | Parameter | Meaning |
 |-----------|---------|
-| `signal`  | the broker's WebSocket URL to dial |
+| `signal`  | the broker's WebSocket URL to dial — **optional** (see below) |
 | `daemon`  | the daemon's public key (`daemonID`) — the client **pins** this as the real Mac |
 | `pair`    | the one-time secret `S` |
 
+`signal` is omitted from released daemons' pairing URLs: the hosted client
+(`app.simbeam.dev`) already knows its default broker (`wss://signal.simbeam.dev/ws`),
+so repeating it only lengthens the URL and its QR. A daemon prints `signal` only when
+it talks to a *different* broker (local dev, self-hosted) — so the client always
+learns a broker it wouldn't otherwise assume. Absent `signal` ⇒ client uses its
+baked default.
+
 ### What the client does with it
 
-The client scans the QR (or opens the URL) and reads `signal`, `daemon`, `pair` from the
-fragment. It then:
+The client scans the QR (or opens the URL) and reads `signal` (falling back to its
+default broker when absent), `daemon`, and `pair` from the fragment. It then:
 
 1. Generates **its own** permanent keypair (Ed25519) if it doesn't already have one. Its public
    key is `clientPubKey`.
@@ -235,7 +242,9 @@ CLIENT                         BROKER                         DAEMON
   │                                                             │
   │  offer(sdp) ────────────────►│  offer(sdp) ────────────────►│
   │◄ answer(sdp, sig) ───────────│◄ answer(sdp, sig) ───────────│
-  │                                                             │
+  │  candidate ─────────────────►│  candidate ─────────────────►│   (trickle: both ways,
+  │◄ candidate ──────────────────│◄ candidate ──────────────────│    interleaved with the
+  │                                                             │    answer, not after it)
   │═══════ direct peer-to-peer WebRTC (video + control) ════════│
 ```
 
@@ -251,12 +260,24 @@ CLIENT                         BROKER                         DAEMON
    - The broker verifies `brokerSig` independently → confirms the client's key for TURN gating,
      then removes `brokerSig` before forwarding.
 4. **iceServers** — the broker sends each side the ICE configuration to use (STUN always; TURN if
-   the client has an active subscription). See [TURN](#turn-and-subscriptions).
+   the client has an active subscription). See [TURN](#turn-and-subscriptions). The same message
+   carries the trickle verdict (step 6).
 5. **offer / answer** — the client (offerer) sends a standard WebRTC SDP **offer**. The daemon
    (answerer) replies with an SDP **answer** *and signs it* with its private key:
    `{ "type":"answer", "sdp":"<...>", "sig":"<sign(sdp)>" }`. The client verifies `sig` against the
    pinned `daemonID` — this is the anti-MITM check that proves the answer came from the real Mac and
    not a broker substituting its own.
+6. **candidate** *(trickle ICE)* — instead of holding the offer/answer until ICE gathering has
+   finished (which means waiting for the slowest TURN allocation, seconds on mobile), each side
+   sends its SDP immediately and streams candidates as they appear:
+   `{ "type":"candidate", "candidate":"candidate:...", "sdpMid":"0", "sdpMLineIndex":0 }`, with an
+   empty `candidate` marking end-of-candidates. Both peers opt in — the daemon with
+   `"trickle":true` on `register`, the client on `join` — and the broker ANDs the two onto the
+   `iceServers` message. Anything missing that field (an older broker, daemon, or client) falls
+   back to the original all-candidates-inside-the-SDP behaviour.
+   Trickled candidates ride outside the answer signature. A hostile broker could inject one, but
+   the DTLS fingerprint stays inside the *signed* SDP, so an injected candidate cannot impersonate
+   the Mac — it can only waste connectivity checks.
 
 After the answer, ICE completes and the WebRTC connection comes up **directly between client and
 Mac**. The broker's job is done.
@@ -280,42 +301,43 @@ The client sends:
 |---------|-------|---------|
 | boot    | `{"type":"boot","udid":"<udid>"}` | power on a simulator |
 | shutdown| `{"type":"shutdown","udid":"<udid>"}` | power off a simulator |
+| restart | `{"type":"restart","udid":"<udid>"}` | power-cycle a simulator: shut down, boot again, reply `booted`. The cure for a `display_not_ready` attach — see [Attaching](#attaching-a-simulator) |
 | attach  | `{"type":"attach","udid":"<udid>","scale":<0.25–1.0>,"bitrate":<bits/s>}` | start streaming this simulator's screen; `scale`/`bitrate` optional, see [Video quality](#video-quality) |
 | detach  | `{"type":"detach"}` | stop streaming |
-| touch   | `{"type":"touch","action":"down"\|"move"\|"up","x":0.5,"y":0.5}` | a raw touch event at normalized [0,1] coordinates |
 | tap     | `{"type":"tap","x":0.5,"y":0.5}` | tap at normalized [0,1] coordinates |
+| touch   | `{"type":"touch","action":"down"\|"move"\|"up","x":..,"y":..}` | one phase of a client-driven touch stream: trajectory and pacing are the client's (curved swipes, long-press, drag with pauses). Single-finger only; while the stream finger is down, `tap`/`swipe` are dropped by the companion |
 | swipe   | `{"type":"swipe","x1":..,"y1":..,"x2":..,"y2":..,"duration":<sec>}` | drag |
 | home    | `{"type":"home"}` | press the Home button |
-| app_switcher | `{"type":"app_switcher"}` | open the app switcher |
+| app_switcher | `{"type":"app_switcher"}` | open the app switcher (the double Home press is serialized inside the companion, so its timing window is guaranteed) |
 | key     | `{"type":"key","key":"<KeyboardEvent.key>"}` | a hardware key press |
 | shake   | `{"type":"shake"}` | shake the attached simulator (e.g. to trigger Shake to Undo); fire-and-forget, no reply |
+| hello   | `{"type":"hello"}` | re-request the greeting: the on-open `hello` rides this lossy channel and doubles as the pin-ack, so a client that hasn't received one shortly after the channel opens asks again (idempotent; daemons ≤ v0.12.0 ignore it) |
 
 Coordinates are **normalized 0–1** relative to the displayed frame; the daemon scales them to the
-simulator's logical points. (Keyboard input sends physical HID key codes — the actual character is
-chosen by the keyboard layout active *inside the simulator*.)
+simulator's logical points.
 
-`touch` is the honest input path: the client forwards pointer events as they happen, so the device
-sees a real finger (long press, flick, inertial scroll all follow from it) instead of a synthesized
-gesture. Because control is lossy, the client **thins `move`** — coalesced to roughly one per frame
-— and sends `up` **redundantly**: a lost `move` is invisible, a lost `up` leaves a finger stuck.
-On a slow uplink (mobile) `move` additionally yields to backpressure: while bytes are still queued
-on the channel, positions are dropped rather than buffered, since they would arrive stale anyway.
-Coordinates carry four decimals — ~0.1 device point, and a third shorter on the wire.
-`tap` and `swipe` remain for one-shot synthesized gestures, and stay the fallback: a client uses
-`touch` only when the daemon lists it in `caps` (see [hello](#the-live-session-control-and-video)),
-otherwise it recognises the gesture itself and sends `tap`/`swipe` as before. In simbeam-web that
-is `src/protocol/touch.ts` and `src/protocol/swipe.ts`, chosen in the controller.
+`touch` rides this same lossy channel, so clients must budget for drops: coalesce `move` events
+client-side (a lost move only dents the trajectory), and treat `up` as the one message that
+matters — send it redundantly if needed. The companion self-heals the worst case: a re-`down`
+first releases the previous finger, and process EOF releases a hanging one. (Keyboard input sends physical HID key codes — the actual character is
+chosen by the keyboard layout active *inside the simulator*.)
 
 The daemon replies on the same channel:
 
 | Reply | Shape |
 |-------|-------|
-| hello    | `{"type":"hello","name":"<Mac name>","osVersion":"<macOS version>","paired":true,"version":"<daemon>","caps":["touch","app_switcher"]}` |
-| booted   | `{"type":"booted","udid":"<udid>"}` |
+| hello    | `{"type":"hello","name":"<Mac name>","osVersion":"<macOS version>","paired":true,"version":"<semver>","caps":["touch","app_switcher","lifecycle","trickle"],"latestVersion":"<semver>"}` — `version` is the daemon's own version; `caps` lists the optional control features this daemon+backend forwards, and it is how a client learns it may stream `touch`/send `app_switcher`/put lifecycle on `bulk` (**gate on membership; a hello without `caps` is a daemon ≤ v0.11 → assume the v1 gesture set** — the demo backend advertises only `lifecycle` and `trickle`, it swallows touch). `trickle` is the odd one out and gates nothing: this message arrives long after the connection trickle ICE exists to speed up, so the real negotiation is in signalling. It is diagnostic — a client that asked for trickle and got `"trickle":false` on `iceServers` can tell an old broker (this cap present) from an old daemon (cap absent). `latestVersion` appears only when the daemon's daily GitHub-Releases check found a newer simbeamd; clients may show an "update the Mac side" nudge (`brew upgrade`) |
+| booted   | `{"type":"booted","udid":"<udid>"}` — from a `boot`, or from a completed `restart` |
 | shutdown | `{"type":"shutdown","udid":"<udid>"}` (if it was the streaming sim, a `detached` is sent first) |
-| attached | `{"type":"attached","w":<px>,"h":<px>}` (the simulator's **native** screen size — see below) |
-| detached | `{"type":"detached"}` |
-| error    | `{"type":"error","msg":"<reason>","code":"<machine code>"}` |
+| attaching | `{"type":"attaching","udid":"<udid>"}` — the attach was accepted; a terminal reply follows. See [Attaching](#attaching-a-simulator) |
+| attached | `{"type":"attached","udid":"<udid>","w":<px>,"h":<px>}` (the simulator's **native** screen size — see below) |
+| detached | `{"type":"detached","udid":"<udid>"}` — `udid` is the device that stopped, including one whose attach was still starting |
+| stream_ended | `{"type":"stream_ended","udid":"<udid>","msg":"<reason>"}` — the feed died on its own; **not** sent when you ended it |
+| error    | `{"type":"error","operation":"attach\|boot\|restart\|shutdown","udid":"<udid>","code":"<machine code>","retryable":<bool>,"msg":"<reason>"}` |
+
+`operation` says which request failed and `udid` which device, so a failure needs no correlation by
+arrival order. `retryable` says whether re-sending that same request unchanged is worth it; it is
+omitted when false.
 
 **The `hello` greeting** is the **first** message the daemon sends, pushed *unsolicited* the
 moment the client opens the `control` channel (before any command). It carries:
@@ -323,13 +345,6 @@ moment the client opens the `control` channel (before any command). It carries:
 - `name` — the Mac's display name (e.g. `"Kirill's MacBook Pro"`), for the UI subtitle.
 - `osVersion` — the macOS version (e.g. `"26.5"`). Note the field is **`osVersion`** (camelCase),
   *not* the `os_version` used inside a simulator's `sims` entry.
-- `version` — the daemon's own version (e.g. `"0.12.0"`), for logs and update hints.
-- `caps` — the capabilities this daemon supports (e.g. `["touch","app_switcher"]`). **Absent on
-  daemons that predate capability negotiation; treat that as `[]`.** A client sends
-  `{"type":"hello"}` itself when the control channel opens rather than waiting for the unsolicited
-  greeting, and gates every optional feature on this list — never on a version comparison. What is
-  in `caps` but unknown to the client means the *client* is old; what the client knows and `caps`
-  omits means the *daemon* is old (see `src/protocol/caps.ts`).
 - `paired: true` — an explicit **pin-acknowledgement**. Reaching the control channel is only
   possible past the key challenge, which an enrolling client clears only after the daemon has
   durably saved its key. So a `hello` is proof the pairing actually took (see
@@ -338,18 +353,40 @@ moment the client opens the `control` channel (before any command). It carries:
 
 **Bulk — a DataChannel labeled `bulk`** is **reliable and ordered**, and unlike `control` it is
 created by the **client**; the daemon routes it by label. It carries what `control` must not: a
-request too large for one message, or one that may not be silently dropped. Three requests exist:
+request too large for one message, or one that may not be silently dropped.
 
 | Request | Shape | Reply |
 |---------|-------|-------|
-| list       | `{"type":"list"}` | `{"type":"sims","sims":[{"udid":..,"name":..,"state":..,"os_version":..}, …]}` — the Mac's simulators (empty list → `"sims":[]`) |
-| screenshot | `{"type":"screenshot"}` | a full-resolution PNG, chunked — see [Full-resolution screenshots](#full-resolution-screenshots) |
+| list       | `{"type":"list"}` | the Mac's simulators, `chunked` — header `{"type":"sims","bytes":N}` + binary chunks → JSON array `[{"udid":..,"name":..,"os_version":..,"state":..}, …]` (empty list → `[]`). Same framing as a screenshot; see [Chunked transfers](#chunked-transfers-screenshots-and-the-simulator-list) |
+| screenshot | `{"type":"screenshot"}` | a full-resolution PNG, `chunked` — see [Chunked transfers](#chunked-transfers-screenshots-and-the-simulator-list) |
 | quality    | `{"type":"quality","scale":<0.25–1.0>,"bitrate":<bits/s>}` | `{"type":"quality","scale":…,"bitrate":…}` — what actually took effect |
+| *lifecycle* | `boot`, `restart`, `attach`, `detach`, `shutdown` — byte for byte the messages from the `control` table | the same replies, delivered here instead |
 
-`list` rides `bulk` (not `control`) because the simulator list **must** arrive: on a lossy path an
-unreliable `list`/`sims` is dropped with no retransmission and the list never shows. The client
-requests it once the channel opens and re-requests until a `sims` reply lands; `list` is idempotent
-on the daemon, so a duplicate is harmless.
+**Put lifecycle on `bulk` when the daemon advertises `lifecycle` in its `caps`.** Requests and
+replies are identical on both channels, so this is purely a choice of transport — but `control` may
+drop either half, and a lost `attach` looks exactly like a lost `attached`: the client can only sit
+and wait. Send input on `control`, where a stale tap is worse than a lost one, and lifecycle on
+`bulk`, where nothing is ever dropped.
+
+**A reply always comes back on the channel that carried the request**, so a daemon never answers on
+a channel you aren't reading. Once you have sent one lifecycle request on `bulk`, unsolicited
+lifecycle events (`stream_ended`) go there too.
+
+Lifecycle errors and request errors are both `{"type":"error"}` on this channel; the lifecycle ones
+carry `operation`, the `list`/`screenshot`/`quality` ones never do.
+
+**Every bulk frame — text or binary — is at most 1024 bytes.** The transfer must fit a single SCTP
+packet. On an IPv6 path (Tailscale, native cellular: 1280-byte minimum link MTU, no in-network
+fragmentation, PMTUD usually filtered) any bulk message the stack splits across more than one packet
+**black-holes** — the fragment exceeds 1280, routers drop it silently, and SCTP retransmits the same
+oversized chunk forever, while small single-packet frames (`hello`, a `quality` echo) sail through.
+So a reply larger than one packet is never one frame: it is chunked (below), and the four-field
+`sims` array is deliberately slim — `model`, `architecture` and `type` are dropped — to stay small.
+
+The `sims` reply lives on `bulk`, not `control`: it is the largest and most critical control message,
+and on a cellular/relay path `control`'s unreliable delivery dropped it with no retransmission,
+hanging the list screen on a spinner forever. The client requests `list` once the channels open and
+re-requests until the `sims` reply arrives, so the daemon answers every `list` (it is idempotent).
 
 Every bulk request gets a reply: the payload above, or
 `{"type":"error","msg":"<reason>","code":"<machine code>"}` — branch on `code`, never on `msg`. Keep
@@ -362,42 +399,116 @@ channel for up to 15s.
 | `bad_request`    | The request wasn't valid JSON. |
 | `no_attachment`  | Nothing is attached to act on. `attach` first. |
 | `capture_failed` | The request was fine; the capture or its transfer failed. Retryable. |
+| `list_failed`    | The request was fine; enumerating the simulators failed. Retryable. |
 
 **Video — an H.264 track** flows from daemon to client. The track is negotiated up front but stays
 **silent until you `attach` a simulator**. On `attach`, the daemon starts capturing that simulator
 and pushing H.264; on `detach` (or a new `attach`), it stops. You don't renegotiate the WebRTC
 session to switch simulators — the video track just goes quiet and resumes.
 
-### Full-resolution screenshots
+### Attaching a simulator
+
+Attach is asynchronous, and it is the one lifecycle request that can take seconds: the daemon spawns
+a capture process and, on a cold-booted simulator, waits for the device to produce its first
+framebuffer. So it answers twice.
+
+```
+→ {"type":"attach","udid":"…"}
+← {"type":"attaching","udid":"…"}          accepted; the device that owns the outcome
+← {"type":"attached","udid":"…","w":…,"h":…}      … or exactly one of:
+← {"type":"error","operation":"attach","udid":"…","code":"display_not_ready","retryable":true,"msg":"…"}
+```
+
+**Every accepted attach ends, and within a bounded interval** (30s; the capture process is given
+less than that, so its own typed failure wins the race). It ends in one of four ways:
+
+- `attached` — streaming.
+- `error` with `operation: "attach"` — it failed, and `code` says why.
+- **a reply to something newer.** A `detach`, `shutdown` or `restart` you sent while the attach was
+  still starting cancels it, and *that* request's reply (`detached`, `shutdown`, `booted`) is the
+  end of the attach. The cancelled attach itself says nothing more — it must not, or you would get a
+  contradicting `attached` for a device you already dismissed.
+- **another `attaching`.** A second attach supersedes the first the same way.
+
+So: treat any `attaching` as "the previous attach is over", and any of `detached` / `shutdown` /
+`booted` as terminal for whatever attach was in flight. Nothing else is needed — no timers, no
+correlation ids.
+
+**The failure codes** come from the capture helper and are stable:
+
+| `code` | `retryable` | Meaning and what to do |
+|--------|-------------|------------------------|
+| `device_not_booted` | yes | The simulator is still coming up. `attach` again shortly. |
+| `display_not_ready` | yes | It booted but never produced a framebuffer within the helper's deadline. Retrying rarely helps — this is what `restart` is for. |
+| `device_not_found` | no | No such udid. Re-`list`. |
+| `core_simulator_unavailable` | no | The Mac's simulator subsystem is not usable (broken/absent Xcode). A human has to fix the Mac. |
+| `encoder_failed` | no | The video encoder could not start. |
+| `hid_unavailable` | no | Input could not be wired up. |
+| `invalid_arguments` | no | A daemon/helper version mismatch. Report it. |
+| `attach_failed` | no | The backend refused with no code of its own. |
+| `attach_timeout` | no | Neither a feed nor a typed failure inside the bound. Treat like `display_not_ready`: offer a restart. |
+
+**`retryable` is the only branch you need**: true → send the same `attach` again; false → offer the
+user a `restart` of that simulator, then attach again once `booted` lands. A restart works
+in-session — you never reconnect to the Mac.
+
+```
+← {"type":"error","operation":"attach","udid":"…","code":"display_not_ready","retryable":true}
+→ {"type":"restart","udid":"…"}
+← {"type":"booted","udid":"…"}       the device is freshly booted, and any feed it had is gone
+→ {"type":"attach","udid":"…"}
+```
+
+`restart` is deliberately quiet about the feed it drops: you asked for it, so there is no `detached`
+and no `stream_ended` — just `booted` when the device is back. It can hold the channel for the
+length of a shutdown+boot cycle, so keep one request in flight.
+
+**`stream_ended` is the opposite case: a feed that died without being asked to.** The capture
+process exited, the simulator went away, or the track broke.
+
+```
+← {"type":"stream_ended","udid":"…","msg":"…"}
+```
+
+You get it *only* for deaths you did not cause. Ending the feed yourself — `detach`, `shutdown`,
+`restart`, a new `attach`, or the session closing — is confirmed by that request's own reply and
+never doubled with a `stream_ended`. On receiving one, the daemon is already idle: drop your video
+UI and `attach` again if you want the stream back.
+
+### Chunked transfers (screenshots and the simulator list)
+
+A reply too big for one 1024-byte packet is sent as a **header followed by binary chunks**. Both the
+full-resolution screenshot and the `sims` list use this exact framing — only the header's `type` and
+the reassembled payload differ.
 
 The video track is lossy and downscaled, so a screenshot is **not** grabbed from it. `{"type":
 "screenshot"}` on `bulk` makes the daemon capture the attached device fresh, at its **native full
-resolution**, straight from the source — bypassing the video pipeline entirely.
-
-A PNG of a retina screen is several megabytes, far past what one SCTP message can carry, so the
-reply is a **header followed by binary chunks**:
+resolution**, straight from the source — bypassing the video pipeline entirely. A PNG of a retina
+screen is several megabytes; the `sims` array is a few kilobytes. Either way:
 
 ```
-← {"type":"screenshot","bytes":3145728}    ← text frame: total size
-← <binary chunk>                            ← binary frames …
+← {"type":"screenshot","bytes":3145728}    ← text frame: parse type + total size
+← <binary chunk>                            ← binary frames, each ≤ 1024 bytes …
 ← <binary chunk>
 ← <binary chunk>                            ← … concatenating to exactly 3145728 bytes
 ```
 
-**Reassembly:** append the binary frames in arrival order until you hold exactly `bytes` bytes.
-That is the complete PNG. There are no sequence numbers and none are needed — `bulk` is reliable
-and ordered, so chunks cannot arrive out of order or go missing. The header's `bytes` is your only
-end-of-transfer signal; the daemon sends no terminator.
+**Reassembly:** append the binary frames in arrival order until you hold exactly `bytes` bytes, then
+parse per the header's `type` — a `screenshot` blob is the PNG, a `sims` blob is the JSON simulator
+array. There are no sequence numbers and none are needed: `bulk` is reliable and ordered, so chunks
+cannot arrive out of order or go missing. The header's `bytes` is your only end-of-transfer signal;
+the daemon sends no terminator. Each chunk is capped at 1024 bytes, so expect many small chunks
+rather than a few large ones.
 
 **Success vs failure is the frame type, not the content.** A successful transfer is one *text*
 frame (the header) followed by *binary* frames. A failure is a single *text* frame:
-`{"type":"error","msg":"<reason>"}`. Branch on whether the frame arrived as binary or text — do not
-try to parse a chunk as JSON. Errors you should expect: nothing attached, the capture failed, or
-the capture came back empty.
+`{"type":"error","msg":"<reason>","code":"<machine code>"}`. Branch on whether the frame arrived as
+binary or text — do not try to parse a chunk as JSON. Errors you should expect: nothing attached,
+the capture failed, the capture came back empty, or (for `list`) enumerating the simulators failed.
 
-**Chunk size is the daemon's business, not a constant to hardcode.** It sizes each frame from the
-message cap your peer actually negotiated (capped at 200 KiB), so it adapts to your client. Just
-append whatever arrives.
+**Frame size is the daemon's business; you just append whatever arrives.** Every frame is at most
+1024 bytes — one SCTP packet, so nothing black-holes on an IPv6 path (see the cap note above the
+request table). Don't assume a particular chunk size or count; reassemble by the header's `bytes`.
 
 **The daemon always replies** — image or error — and bounds the capture at ~15s so a wedged
 simulator can't leave you waiting on your own timeout.
@@ -447,8 +558,9 @@ your decoder, resolution change included. `<video>` (or your native decoder) wil
 dimensions on its own.
 
 Note the reply comes back **immediately**, before the new feed is up — it confirms the daemon
-accepted the values, not that the picture has changed. If the re-attach then fails, that surfaces on
-`control` as an `error`, exactly like any other failed attach.
+accepted the values, not that the picture has changed. The rebuild's own outcome follows like any
+other attach's — `attached`, or one typed `error` with `operation: "attach"` — on whichever channel
+you send lifecycle on (`control` if you have never sent lifecycle over `bulk`).
 
 **`quality` needs a live feed.** With nothing attached it replies `error` — it is a change to a
 running stream, not a stored preference. Put the starting quality on `attach`.
@@ -492,13 +604,21 @@ control codes:
 | `code` | Sent by | Meaning |
 |--------|---------|---------|
 | `offline`      | broker | The target Mac's daemon is not currently registered. Wake the Mac and retry. |
+| `busy`         | broker | Another client holds this Mac's single session. Ask the user, then either stop or rejoin with `"takeover":true` — never auto-retry in a loop. |
+| `taken_over`   | broker | Your session was ended by another device joining with `takeover`; the socket closes right after. |
 | `pair_expired` | daemon | The pairing window expired (TTL passed) or was cancelled. Generate a fresh QR. |
 | `pair_used`    | daemon | The one-time pairing secret was already consumed by a successful pairing. Generate a fresh QR. |
 | `pair_invalid` | daemon | No pairing window is open, or the enrollment proof didn't match. |
+| `bad_request`  | daemon | The lifecycle request was malformed — a `boot`/`attach`/`restart`/`shutdown` with no `udid`. |
+| `boot_failed` / `shutdown_failed` / `restart_failed` | daemon | That power operation failed on the Mac; `msg` carries the toolchain's reason. |
+| attach codes   | daemon | Listed with [Attaching a simulator](#attaching-a-simulator) — they carry `retryable` too. |
 
 `pair_*` codes accompany a rejected `join`/`connect` during pairing; `offline` comes back when you
-`join` a Mac that isn't online. An `error` with no `code` is a generic failure (e.g. a control
-command that failed for some operational reason) — surface its `msg`.
+`join` a Mac that isn't online, `busy` when someone else is already on it. A `join` carrying the key
+that already holds the session is a reconnect, not a second viewer: it takes the slot over and never
+gets `busy`. A `busy` refusal never reaches the daemon, so a pairing secret sent with it stays
+unspent — the confirmed retry can reuse it verbatim plus `"takeover":true`. Lifecycle failures also carry `operation` (which request failed) and
+`udid` (which device). An `error` with no `code` is a generic failure — surface its `msg`.
 
 ---
 
@@ -520,21 +640,28 @@ What this means in practice:
 - **Active subscription:** the broker additionally hands you **short-lived TURN credentials** in the
   `iceServers` message, so the relay fallback is available.
 
-The TURN credentials the broker issues look like this inside `iceServers`:
+The relay is **Cloudflare Realtime TURN** — a managed anycast service, so there's no relay host to
+run or firewall. The entry the broker issues inside `iceServers` is what Cloudflare mints:
 
 ```json
 {
-  "urls": ["turn:relay.example:3478"],
-  "username": "<unix-expiry>:<clientPubKey>",
-  "credential": "<base64( HMAC-SHA1( turnSecret, username ) )>"
+  "urls": [
+    "turn:turn.cloudflare.com:3478?transport=udp",
+    "turns:turn.cloudflare.com:443?transport=tcp"
+  ],
+  "username": "<opaque>",
+  "credential": "<opaque>"
 }
 ```
 
-They're ephemeral (default ~1 minute TTL) and computed from a secret shared between the broker and
-the TURN server (`coturn`), so no per-credential state is stored anywhere.
+Unlike coturn's REST-API mechanism there's no shared secret to HMAC locally: credentials only come
+from Cloudflare's API, so the broker fetches one with its TURN key and reuses it for every active
+subscriber until it's halfway to expiry (default TTL 24h — Cloudflare tears down an allocation once
+its credential lapses, so the TTL has to outlive a session). `turns:...:443` is the entry that gets
+through corporate and hotel networks.
 
-When you self-host, **you decide the policy** — point the broker at your own `coturn` and your own
-subscription store, or skip TURN entirely and run STUN-only.
+When you self-host, **you decide the policy** — bring your own Cloudflare TURN key and subscription
+store, or skip TURN entirely and run STUN-only.
 
 ### The subscription API
 
@@ -622,7 +749,7 @@ Rules and behavior:
 | **WebRTC** | The browser/native standard for real-time peer-to-peer audio/video/data. Carries the video and control channel. |
 | **SDP** | Session Description Protocol — the text blob describing a WebRTC connection, exchanged as **offer** and **answer**. |
 | **Offerer / Answerer** | In a WebRTC handshake, the side that proposes the session (client) vs. the side that responds (daemon). |
-| **DataChannel** | A WebRTC channel for arbitrary data, separate from the media track. Two here: `control` (commands/input, unreliable) and `bulk` (screenshots and quality changes, reliable+ordered). |
+| **DataChannel** | A WebRTC channel for arbitrary data, separate from the media track. Two here: `control` (input, unreliable) and `bulk` (screenshots, quality and lifecycle — reliable+ordered). |
 | **ICE** | Interactive Connectivity Establishment — how WebRTC discovers a working network path between two peers. |
 | **ICE candidate / host candidate** | A possible address/path for the connection; a *host* candidate is a direct local-network address. |
 | **STUN** | A lightweight server that tells a peer its public address so two peers can connect **directly**. Free, always offered. |
