@@ -1,7 +1,7 @@
 import { bytesToB64 } from "./b64";
 import { enrollProof } from "./enroll";
 import { type Identity, verifyEd25519 } from "./identity";
-import type { ControlReply, SignalMsg } from "./messages";
+import type { CandidateMsg, ControlReply, SignalMsg } from "./messages";
 
 export interface SessionTarget {
   /** Broker WebSocket URL. */
@@ -37,6 +37,36 @@ export function classifyTransport(local: string, remote: string): TransportKind 
   return "p2p";
 }
 
+/** Candidates held before the answer arrives; a real peer sends a handful. */
+const CANDIDATE_BUFFER = 32;
+
+/**
+ * Trickled candidates can arrive before the answer is applied, and
+ * `addIceCandidate` rejects in that window — hold them until `open()`.
+ * Anything past the cap is dropped: a flood there is a broken or hostile
+ * broker, and ICE only needs one working pair.
+ */
+export function candidateQueue(
+  apply: (c: RTCIceCandidateInit) => void,
+  limit = CANDIDATE_BUFFER,
+): {
+  add(c: RTCIceCandidateInit): void;
+  open(): void;
+} {
+  let ready = false;
+  const pending: RTCIceCandidateInit[] = [];
+  return {
+    add(c) {
+      if (ready) apply(c);
+      else if (pending.length < limit) pending.push(c);
+    },
+    open() {
+      ready = true;
+      for (const c of pending.splice(0)) apply(c);
+    },
+  };
+}
+
 export interface SessionCallbacks {
   onPhase(phase: SessionPhase): void;
   /** Fired when the control channel opens (safe to send input commands). */
@@ -47,7 +77,8 @@ export interface SessionCallbacks {
   /** A frame arrived on the bulk channel (chunked screenshot/sims transfer). */
   onBulkFrame(frame: string | Uint8Array): void;
   onVideoTrack(stream: MediaStream): void;
-  onIceServers(servers: RTCIceServer[]): void;
+  /** `trickle` is the broker's verdict — false means the pre-trickle flow. */
+  onIceServers(servers: RTCIceServer[], trickle: boolean): void;
   /** The live path (LAN / P2P / relay), read from ICE stats once connected. */
   onTransport(kind: TransportKind): void;
   /** Pairing/enrollment succeeded — pin the Mac now (hello confirms). */
@@ -74,6 +105,11 @@ export class Session {
   private ws: WebSocket | null = null;
   private offerSent = false;
   private alive = true;
+  /** The broker's trickle verdict from `iceServers` — not our own wish. */
+  private trickle = false;
+  private remoteCandidates = candidateQueue((c) => {
+    this.pc?.addIceCandidate(c).catch(() => {});
+  });
 
   constructor(
     private target: SessionTarget,
@@ -155,6 +191,7 @@ export class Session {
         role: "client",
         daemon: this.target.daemon,
         pubkey: this.identity.pub,
+        trickle: true,
       };
       if (this.target.pair) {
         const nonce = bytesToB64(crypto.getRandomValues(new Uint8Array(16)));
@@ -181,17 +218,48 @@ export class Session {
         }
         case "iceServers": {
           const servers = m.iceServers ?? [];
-          this.cb.onIceServers(servers);
+          this.trickle = m.trickle === true;
+          this.cb.onIceServers(servers, this.trickle);
           this.pc?.setConfiguration({ iceServers: servers });
           if (!this.offerSent && this.pc) {
             this.cb.onPhase("ice");
+            // Trickle: ship the offer as soon as it exists and stream candidates
+            // after it. Otherwise they all have to ride inside the SDP.
+            if (this.trickle) {
+              this.pc.onicecandidate = (ev) => {
+                if (!this.alive || ws.readyState !== WebSocket.OPEN) return;
+                const c = ev.candidate;
+                const msg: CandidateMsg = c
+                  ? {
+                      type: "candidate",
+                      candidate: c.candidate,
+                      sdpMid: c.sdpMid,
+                      sdpMLineIndex: c.sdpMLineIndex,
+                    }
+                  : { type: "candidate" }; // end-of-candidates
+                ws.send(JSON.stringify(msg));
+              };
+            }
             const offer = await this.pc.createOffer();
             await this.pc.setLocalDescription(offer);
-            await this.iceGatheringComplete();
+            if (!this.trickle) await this.iceGatheringComplete();
             if (!this.alive || !this.pc.localDescription) return;
             ws.send(JSON.stringify({ type: "offer", sdp: this.pc.localDescription.sdp }));
             this.offerSent = true;
             this.cb.onPhase("connecting");
+          }
+          break;
+        }
+        case "candidate": {
+          // Unsolicited under a `false` verdict — the candidates are in the SDP.
+          // Empty candidate is the daemon's end-of-candidates marker; nothing
+          // to add, ICE just stops expecting more.
+          if (this.trickle && m.candidate) {
+            this.remoteCandidates.add({
+              candidate: m.candidate,
+              sdpMid: m.sdpMid ?? null,
+              sdpMLineIndex: m.sdpMLineIndex ?? null,
+            });
           }
           break;
         }
@@ -203,6 +271,7 @@ export class Session {
             return;
           }
           await this.pc?.setRemoteDescription({ type: "answer", sdp: m.sdp });
+          this.remoteCandidates.open();
           this.minimizeBuffer();
           if (this.target.pair) this.cb.onPaired?.();
           break;

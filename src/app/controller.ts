@@ -223,7 +223,9 @@ export class Controller implements Intents {
         sessionLog.info(`video: track${track ? ` (${track.readyState})` : ""}`);
         this.videoMounted();
       },
-      onIceServers: () => {},
+      // Which path ICE took is otherwise invisible, and it is the first thing
+      // to know when someone reports a slow connect.
+      onIceServers: (_servers, trickle) => sessionLog.info(`trickle: ${trickle ? "on" : "off"}`),
       onTransport: (kind) => {
         sessionLog.info(`transport: ${kind}`);
         this.store.set({ transport: kind });

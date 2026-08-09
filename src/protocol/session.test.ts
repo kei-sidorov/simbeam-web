@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { classifyTransport } from "./session";
+import { candidateQueue, classifyTransport } from "./session";
+
+describe("candidateQueue", () => {
+  it("holds candidates until the remote description is applied, then flushes in order", () => {
+    const applied: string[] = [];
+    const q = candidateQueue((c) => applied.push(String(c.candidate)));
+    q.add({ candidate: "a" });
+    q.add({ candidate: "b" });
+    expect(applied).toEqual([]);
+    q.open();
+    expect(applied).toEqual(["a", "b"]);
+  });
+
+  it("drops candidates past the buffer cap", () => {
+    const applied: string[] = [];
+    const q = candidateQueue((c) => applied.push(String(c.candidate)), 2);
+    for (const candidate of ["a", "b", "c"]) q.add({ candidate });
+    q.open();
+    expect(applied).toEqual(["a", "b"]);
+  });
+
+  it("applies straight through once open", () => {
+    const applied: string[] = [];
+    const q = candidateQueue((c) => applied.push(String(c.candidate)));
+    q.open();
+    q.add({ candidate: "a" });
+    expect(applied).toEqual(["a"]);
+  });
+});
 
 describe("classifyTransport", () => {
   it("calls two host ends a LAN link", () => {

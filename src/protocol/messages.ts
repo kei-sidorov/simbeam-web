@@ -11,6 +11,16 @@ export interface ChallengeMsg {
 export interface IceServersMsg {
   type: "iceServers";
   iceServers?: RTCIceServer[];
+  /** Broker's verdict: both peers asked for trickle. Absent/false = old flow. */
+  trickle?: boolean;
+}
+
+/** One trickled ICE candidate; an empty `candidate` means end-of-candidates. */
+export interface CandidateMsg {
+  type: "candidate";
+  candidate?: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
 }
 
 export interface AnswerMsg {
@@ -30,7 +40,13 @@ export interface PeerLeftMsg {
   type: "peerLeft";
 }
 
-export type SignalMsg = ChallengeMsg | IceServersMsg | AnswerMsg | ErrorMsg | PeerLeftMsg;
+export type SignalMsg =
+  | ChallengeMsg
+  | IceServersMsg
+  | CandidateMsg
+  | AnswerMsg
+  | ErrorMsg
+  | PeerLeftMsg;
 
 // ---- presence ----
 

@@ -387,9 +387,16 @@ function scheduleReconnect() {
 async function signal3C(s, gen) {
   sig = new WebSocket(s.signal);
   let offerSent = false;
+  // Trickled candidates can arrive before the answer is applied; addIceCandidate
+  // rejects in that window, so hold them (capped) until setRemoteDescription
+  // resolves. trickle is the broker's verdict from iceServers, not our wish.
+  let trickle = false;
+  let remoteReady = false;
+  const pendingCands = [];
+  const CANDIDATE_BUFFER = 32;
 
   const sendJoin = async () => {
-    const join = {type: 'join', role: 'client', daemon: s.daemon, pubkey: clientPub};
+    const join = {type: 'join', role: 'client', daemon: s.daemon, pubkey: clientPub, trickle: true};
     if (s.pair) {
       const nonce = bytesToB64(crypto.getRandomValues(new Uint8Array(16)));
       join.nonce = nonce;
@@ -417,20 +424,43 @@ async function signal3C(s, gen) {
         window._iceServers = m.iceServers || [];
         refreshTurnIndicator(window._iceServers); // defined in Task 18
         pc.setConfiguration({iceServers: window._iceServers});
+        trickle = m.trickle === true;
         if (!offerSent) {
+          // Trickle: send the offer right after setLocalDescription and stream
+          // candidates after it. Without it they all ride inside the SDP.
+          if (trickle) {
+            pc.onicecandidate = (ev) => {
+              if (gen !== startGen || sig.readyState !== WebSocket.OPEN) return;
+              const c = ev.candidate;
+              sig.send(JSON.stringify(c
+                ? {type: 'candidate', candidate: c.candidate, sdpMid: c.sdpMid,
+                   sdpMLineIndex: c.sdpMLineIndex}
+                : {type: 'candidate'})); // end-of-candidates
+            };
+          }
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          await iceGatheringComplete(pc);
+          if (!trickle) await iceGatheringComplete(pc);
           if (gen !== startGen) return;
           sig.send(JSON.stringify({type: 'offer', sdp: pc.localDescription.sdp}));
           offerSent = true;
         }
         break;
       }
+      case 'candidate': {
+        // Unsolicited under a false verdict; empty candidate = end-of-candidates.
+        if (!trickle || !m.candidate) break;
+        const c = {candidate: m.candidate, sdpMid: m.sdpMid ?? null, sdpMLineIndex: m.sdpMLineIndex ?? null};
+        if (remoteReady) pc.addIceCandidate(c).catch(() => {});
+        else if (pendingCands.length < CANDIDATE_BUFFER) pendingCands.push(c);
+        break;
+      }
       case 'answer': {
         const ok = await verifyAnswer(s.daemonPub, m.sdp, m.sig);
         if (!ok) { showAuthFail(); teardown(); return; }
         await pc.setRemoteDescription({type: 'answer', sdp: m.sdp});
+        remoteReady = true;
+        for (const c of pendingCands.splice(0)) pc.addIceCandidate(c).catch(() => {});
         minimizeBuffer(pc);
         if (s.save) {
           saveMac({signal: s.signal, daemon: s.daemon, daemonPub: s.daemonPub, name: s.name || 'Mac'});
